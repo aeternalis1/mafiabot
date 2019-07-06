@@ -9,16 +9,36 @@ async def on_ready():
     await client.change_presence(status=discord.Status.idle, activity=activity)
 
 
+commands = {
+    'help': '`m!help` displays the help screen. Fairly obvious.',
+    'h2p': '`m!h2p` describes the basic rules and premise of the game.',
+    'start': '`m!start` begins a new round of mafia.',
+    'end': '`m!end` ends the current game, if existing. Can only be called by a moderator or a player.',
+    'roles': '`m!roles` lists all available roles that can be added to the game.',
+    'add': '`m!add [role] [number]` adds `[number]`x of `[role]` to the current setup. e.g. `m!add villager 3`',
+    'remove': '`m!remove [role] [number]` removes `[number]`x of [role] from the current setup. e.g. `m!remove villager 2`',
+    'setup': '`m!setup` shows the full complement of roles in the current setup.',
+    'settings': '`m!settings` displays all the settings of the current game.',
+    'toggle': '`m!toggle [setting]` flips `[setting]` from on to off, or vice versa. Type `m!settings` to see options. e.g. `m!toggle daystart`',
+    'setlimit': '`m!setlimit [phase] [time]` sets the time limit for `[phase]` to `[time]` in minutes. `[time]` can be a positive real number at least 1 or `inf`. e.g. `m!setlimit day 10`',
+    'join' : '`m!join` makes you join the game.',
+    'leave' : '`m!leave` makes you leave the game.',
+    'vote': '`m!vote [player]` puts your current vote on `player`. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
+    'unvote': '`m!unvote` sets your vote to nobody (no vote).',
+    'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
+    'players': '`m!players` displays all players who are currently alive',
+    'alive': '`m!alive` displays all the roles and their quantities that are still in play.'
+}
+
+
 help_text = [
     "```List of commands```",
     "Type t!help [command] to receive details about the command itself.",
     "**1. Basic**: `help` `h2p` `start` `end`",
-        # refers to itself, how to play, start game, end game (only mod or player)
-    "**2. Setup**: `roles` `add` `remove` `setup` `settings` `toggle` `join` `leave`",
-        # see all roles, add/remove role, check current setup
+    "**2. Setup**: `roles` `add` `remove` `setup` `settings` `toggle` `setlimit` `join` `leave`",
     "**3. In-game**: `vote` `unvote` `status` `players` `alive`"
-        # vote [player], unvote, who is voting whom, alive players, alive roles
 ]
+
 
 h2p_text = [
     "**How to play:**",
@@ -28,55 +48,60 @@ h2p_text = [
     "2. Nighttime, when mafia are free to murder one innocent citizen of the town, and certain townspeople can use their special abilities.\n",
     "If you are a villager, your win condition is to identify and lynch all of the mafia.",
     "If you are a mafia, your win condition is to either equal or outnumber the townspeople.",
-    "At the start of the game, your role will be assigned to you via DM by this bot."
+    "At the start of the game, your role will be assigned to you via DM by this bot.\n",
+    "NOTE: It is recommended to mute pings from this bot, since `@'s` are necessary to properly identify players."
 ]
 
-commands = {
-    'help': '`m!help` displays the help screen. Fairly obvious.',
-    'h2p': '`m!h2p` describes the basic rules and premise of the game.',
-    'start': '`m!start` begins a new round of mafia.',
-    'end': '`m!end` ends the current game, if existing. Can only be called by a moderator or a player.',
-    'roles': '`m!roles` lists all available roles that can be added to the game.',
-    'add': '`m!add [role] [number]` adds `[number]`x of `[role]` to the current setup.',
-    'remove': '`m!remove [role] [number]` removes `[number]`x of [role] from the current setup.',
-    'setup': '`m!setup` shows the full complement of roles in the current setup.',
-    'settings': '`m!settings` displays all the settings of the current game.',
-    'toggle': '`m!toggle [setting]` flips `[setting]` from true to false, or vice versa. Do `m!settings` to see options',
-    'join' : '`m!join` makes you join the game.',
-    'leave' : '`m!leave` makes you leave the game.',
-    'vote': '`m!vote [player]` puts your current vote on `player`.',
-    'unvote': '`m!unvote` sets your vote to nobody (no vote).',
-    'status': '`m!status` displays all players and their votes, as well as current voting leaders.',
-    'players': '`m!players` displays all players who are currently alive',
-    'alive': '`m!alive` displays all the roles and their quantities that are still in play.'
-}
+
+roles_text = [
+    "**Roles:**",
+    "`villager`: Village-aligned role. No special powers.",
+    "`normalcop`: Village-aligned role, capable of determining the alignment of a target player during nighttime.",
+    "`paritycop`: Village-aligned role, capable of determining whether his LAST TWO targets are of the same alignment.",
+    "`doctor`: Village-aligned role, capable of saving a target player from death during nighttime.",
+    "`mafia`: Mafia-aligned role. Capable of killing a villager during nighttime with fellow mafia."
+]
 
 
 settings = {
     'daystart': 0,      # game starts during daytime
     'selfsave': 0,      # doctor can save themselves
     'conssave': 0,      # doctor can save the same person in consecutive turns
-    'paritycop': 0,     # parity cop if true (gets reports on if people are aligned the same way)
+    'continue': 0,      # continue playing even if a player leaves
     'limit1': 'inf',    # time limit for days
     'limit2': 'inf'     # time limit for nights
 }
 
 
 toggle_text = [{
-    'daystart': 'daystart toggled off: The game will commence during nighttime.',
-    'selfsave': 'selfsave toggled off: The doctor will not be able to save himself during nighttime.',
-    'conssave': 'conssave toggled off: The doctor will not be able to save the same patient over consecutive nights.',
-    'paritycop': 'paritycop toggled off: The cop will receive a report stating the alignment of the target (innocent or guilty)'
+    'daystart': '`daystart` toggled off: The game will commence during nighttime.',
+    'selfsave': '`selfsave` toggled off: The doctor will not be able to save himself during nighttime.',
+    'conssave': '`conssave` toggled off: The doctor will not be able to save the same patient over consecutive nights.',
+    'continue': '`continue` toggled off: The game will end if a living player quits.'
 }, {
-    'daystart': 'daystart toggled on: The game will commence during daytime.',
-    'selfsave': 'selfsave toggled on: The doctor will be able to save himself during nighttime.',
-    'conssave': 'conssave toggled on: The doctor will be able to save the same patient over consecutive nights.',
-    'paritycop': 'paritycop toggled on: The cop will receive a report stating if his LAST TWO targets are of the same alignment or not.'
+    'daystart': '`daystart` toggled on: The game will commence during daytime.',
+    'selfsave': '`selfsave` toggled on: The doctor will be able to save himself during nighttime.',
+    'conssave': '`conssave` toggled on: The doctor will be able to save the same patient over consecutive nights.',
+    'continue': '`continue` toggled on: The game will not end if a living player quits.'
 }]
+
+
+players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead)
+
+roles = {}          # dictionary mapping player IDs to roles (as strings)
+
+setup = {
+    'villager': 0,
+    'normalcop': 0,
+    'paritycop': 0,
+    'doctor': 0,
+    'mafia': 0
+}
 
 
 async def invalid(message):
     await message.channel.send('Invalid request. Please refer to `m!help` for aid.')
+
 
 async def m_help(message):
     query = message.content.split()
@@ -87,83 +112,134 @@ async def m_help(message):
     else:
         await invalid(message)
 
+
 async def m_h2p(message):
     await message.channel.send('\n'.join(h2p_text))
+
 
 async def m_start(message):
     pass
 
+
 async def m_end(message):
     pass
 
+
 async def m_roles(message):
-    pass
+    await message.channel.send('\n'.join(roles_text))
+
 
 async def m_add(message):
-    pass
+    query = message.content.split()
+    if query[1] not in roles:
+        await invalid(message)
+        return
+
 
 async def m_remove(message):
     pass
 
+
 async def m_setup(message):
-    pass
+    if not sum([setup[key] for key in setup]):
+        await message.channel.send('There are currently no roles in the setup. Use `m!add [role] [number]` to add some!')
+        return
+    await message.channel.send('\n'.join(['The setup consists of:'] + [key + ': ' + str(setup[key]) for key in setup if setup[key]]))
+
 
 async def m_settings(message):
-    await message.channel.send('\n'.join([key+str(": ")+str(settings[key]) for key in settings]))
+    settings_text = [key + str(": ") + str(settings[key]) + " - " + str(toggle_text[settings[key]][key]) for key in toggle_text[0]]
+    settings_text += ['Time limit for ' + ['days', 'nights'][x - 1] + ' is ' + str(settings['limit' + str(x)]) + ' minute(s).' for x in [1,2]]
+    await message.channel.send('\n'.join(settings_text))
 
 async def m_toggle(message):
     query = message.content.split()
     if query[1] in settings:
-        if query[1] == 'limit1' or query[1] == 'limit2':
-            if query[2] == 'inf':
-                settings[query[1]] = query[2]
-                if query[1] == 'limit1':
-                    await message.channel.send('Time limit for day set to infinite minutes.')
-                else:
-                    await message.channel.send('Time limit for night set to infinite minutes.')
-            else:
-                try:
-                    settings[query[1]] = float(query[2])
-                    if query[1] == 'limit1':
-                        await message.channel.send('Time limit for day set to '+query[2]+' minutes.')
-                    else:
-                        await message.channel.send('Time limit for night set to '+query[2]+' minutes.')
-                except:
-                    await invalid(message)
+        settings[query[1]] ^= 1
+        await message.channel.send(toggle_text[settings[query[1]]][query[1]])
+    else:
+        await invalid(message)
+
+
+async def m_setlimit(message):
+    query = message.content.split()
+    if query[2] == 'inf':
+        settings[query[1]] = query[2]
+        if query[1] == 'day':
+            await message.channel.send('Time limit for day set to infinite minutes.')
         else:
-            settings[query[1]] ^= 1
-            await message.channel.send(toggle_text[settings[query[1]]][query[1]])
+            await message.channel.send('Time limit for night set to infinite minutes.')
         return
-    await invalid(message)
+    else:
+        try:
+            lim = float(query[2])
+            if lim < 1:                # time limit must be at least 1 minute
+                await invalid(message)
+                return
+            settings[query[1]] = lim
+            if query[1] == 'night':
+                await message.channel.send('Time limit for day set to ' + query[2] + ' minutes.')
+            else:
+                await message.channel.send('Time limit for night set to ' + query[2] + ' minutes.')
+        except ValueError:
+            await invalid(message)
+
 
 async def m_join(message):
-    pass
+    # if game is running:
+    #   await message.channel.send('Game is ongoing.')
+    #   return
+    if message.author in players:
+        await message.channel.send('[name], you are already in the game!')
+    else:
+        players[message.author] = True
+        await message.channel.send('[name] has joined the game.')
+
 
 async def m_leave(message):
-    pass
+    # if game is running:
+    #   if player is alive:
+    #       end game
+    #   else:
+    #       player quits (leaves text and voice channels, loses role)
+    #   return
+    if message.author not in players:
+        await message.channel.send('[name], you were not in the game to begin with!')
+    else:
+        players.pop(message.author)
+        await message.channel.send('[name] has left the game.')
+
 
 async def m_vote(message):
     pass
 
+
 async def m_unvote(message):
     pass
+
 
 async def m_status(message):
     pass
 
+
 async def m_players(message):
     pass
+
 
 async def m_alive(message):
     pass
 
 
 tofunc = {
-    'help' : m_help, 'h2p': m_h2p, 'start': m_start,
-    'end': m_end, 'roles': m_roles, 'add': m_add,
-    'remove': m_remove, 'setup': m_setup, 'settings': m_settings,
-    'toggle': m_toggle, 'vote': m_vote, 'unvote': m_unvote,
-    'status': m_status, 'players': m_players, 'alive': m_alive
+    'help' : m_help, 'h2p': m_h2p,
+    'start': m_start, 'end': m_end,
+    'roles': m_roles, 'add': m_add,
+    'remove': m_remove, 'setup': m_setup,
+    'settings': m_settings, 'toggle': m_toggle,
+    'setlimit': m_setlimit, 'join': m_join,
+    'leave': m_leave, 'vote': m_vote,
+    'unvote': m_unvote, 'status': m_status,
+    'players': m_players, 'alive': m_alive
 }
 
 
