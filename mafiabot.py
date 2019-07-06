@@ -130,14 +130,47 @@ async def m_roles(message):
 
 
 async def m_add(message):
+    # if game is running:
+    #   await message.channel.send('Game is ongoing.')
+    #   return
     query = message.content.split()
     if query[1] not in roles:
         await invalid(message)
         return
+    try:
+        num = int(query[2])
+    except ValueError:
+        await invalid(message)
+        return
+    if num != float(query[2]):
+        await message.channel.send('Invalid input: inputted quantity must be integer.')
+    elif num <= 0:
+        await message.channel.send('Invalid input: inputted quantity must be positive.')
+    else:
+        roles[query[1]] += num
+        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (num, query[1], roles[query[1]], query[1]))
 
 
 async def m_remove(message):
-    pass
+    # if game is running:
+    #   await message.channel.send('Game is ongoing.')
+    #   return
+    query = message.content.split()
+    if query[1] not in roles:
+        await invalid(message)
+        return
+    try:
+        num = int(query[2])
+    except ValueError:
+        await invalid(message)
+        return
+    if num != float(query[2]):
+        await message.channel.send('Invalid input: inputted quantity must be integer.')
+    elif num <= 0:
+        await message.channel.send('Invalid input: inputted quantity must be positive.')
+    else:
+        await message.channel.send('Successfully removed %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (min(num, roles[query[1]]), query[1], max(0, roles[query[1]] - num), query[1]))
+        roles[query[1]] = max(0, roles[query[1]] - num)
 
 
 async def m_setup(message):
@@ -148,11 +181,13 @@ async def m_setup(message):
 
 
 async def m_settings(message):
-    settings_text = [key + str(": ") + str(settings[key]) + " - " + str(toggle_text[settings[key]][key]) for key in toggle_text[0]]
-    settings_text += ['Time limit for ' + ['days', 'nights'][x - 1] + ' is ' + str(settings['limit' + str(x)]) + ' minute(s).' for x in [1,2]]
-    await message.channel.send('\n'.join(settings_text))
+    await message.channel.send('\n'.join(['%s : %d - %s' % (key, settings[key], toggle_text[settings[key]][key]) for key in toggle_text[0]] + ['Time limit for %s is %s minute(s).' % (['days', 'nights'][x - 1], settings['limit' + str(x)]) for x in [1, 2]]))
+
 
 async def m_toggle(message):
+    # if game is running:
+    #   await message.channel.send('Game is ongoing.')
+    #   return
     query = message.content.split()
     if query[1] in settings:
         settings[query[1]] ^= 1
@@ -162,6 +197,9 @@ async def m_toggle(message):
 
 
 async def m_setlimit(message):
+    # if game is running:
+    #   await message.channel.send('Game is ongoing.')
+    #   return
     query = message.content.split()
     if query[2] == 'inf':
         settings[query[1]] = query[2]
@@ -169,7 +207,6 @@ async def m_setlimit(message):
             await message.channel.send('Time limit for day set to infinite minutes.')
         else:
             await message.channel.send('Time limit for night set to infinite minutes.')
-        return
     else:
         try:
             lim = float(query[2])
