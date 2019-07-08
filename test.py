@@ -21,9 +21,9 @@ commands = {
     'settings': '`m!settings` displays all the settings of the current game.',
     'toggle': '`m!toggle [setting]` flips `[setting]` from on to off, or vice versa. Type `m!settings` to see options. e.g. `m!toggle daystart`',
     'setlimit': '`m!setlimit [phase] [time]` sets the time limit for `[phase]` to `[time]` in minutes. `[time]` can be a positive real number at least 1 or `inf`. e.g. `m!setlimit day 10`',
-    'join' : '`m!join` makes you join the game.',
-    'leave' : '`m!leave` makes you leave the game.',
-    'vote': '`m!vote [player]` puts your current vote on `player`. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
+    'join' : '`m!join` adds you to the game.',
+    'leave' : '`m!leave` removes you from the game. This may end an ongoing game, so be careful using this command.',
+    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no lynch, which will instantly end the day if a majority. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
     'unvote': '`m!unvote` sets your vote to nobody (no vote).',
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
@@ -68,6 +68,7 @@ settings = {
     'selfsave': 0,      # doctor can save themselves
     'conssave': 0,      # doctor can save the same person in consecutive turns
     'continue': 0,      # continue playing even if a player leaves
+    'reveal': 0,        # reveal role of player upon death
     'limit1': 'inf',    # time limit for days
     'limit2': 'inf'     # time limit for nights
 }
@@ -77,18 +78,31 @@ toggle_text = [{
     'daystart': '`daystart` toggled off: The game will commence during nighttime.',
     'selfsave': '`selfsave` toggled off: The doctor will not be able to save himself during nighttime.',
     'conssave': '`conssave` toggled off: The doctor will not be able to save the same patient over consecutive nights.',
-    'continue': '`continue` toggled off: The game will end if a living player quits.'
+    'continue': '`continue` toggled off: The game will end if a living player quits.',
+    'reveal': '`reveal` toggled off: When a player dies, their role will not be revealed.'
 }, {
     'daystart': '`daystart` toggled on: The game will commence during daytime.',
     'selfsave': '`selfsave` toggled on: The doctor will be able to save himself during nighttime.',
     'conssave': '`conssave` toggled on: The doctor will be able to save the same patient over consecutive nights.',
-    'continue': '`continue` toggled on: The game will not end if a living player quits.'
+    'continue': '`continue` toggled on: The game will not end if a living player quits.',
+    'reveal': '`reveal` toggled on: When a player dies, their role will be revealed.'
 }]
 
+
+end_text = {
+    'None': 'Nobody wins!',
+    'Mafia': 'The mafia win!',
+    'Town': 'The villagers win!'
+}
+
+
+running = [0]
 
 players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead)
 
 roles = {}          # dictionary mapping player IDs to roles (as strings)
+
+votes = {}          # dictionary mapping player IDS to votes (other player IDs, or None)
 
 setup = {
     'villager': 0,
@@ -97,6 +111,10 @@ setup = {
     'doctor': 0,
     'mafia': 0
 }
+
+
+async def gameEnd(message, winner):     # end of game message (role reveal, congratulation of winners)
+    await message.channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (key, roles[key]) for key in roles]))
 
 
 async def invalid(message):
@@ -130,11 +148,11 @@ async def m_roles(message):
 
 
 async def m_add(message):
-    # if game is running:
-    #   await message.channel.send('Game is ongoing.')
-    #   return
+    if running[0]:
+        await message.channel.send('Game is ongoing.')
+        return
     query = message.content.split()
-    if query[1] not in roles:
+    if query[1] not in setup:
         await invalid(message)
         return
     try:
@@ -147,16 +165,16 @@ async def m_add(message):
     elif num <= 0:
         await message.channel.send('Invalid input: inputted quantity must be positive.')
     else:
-        roles[query[1]] += num
-        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (num, query[1], roles[query[1]], query[1]))
+        setup[query[1]] += num
+        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (num, query[1], setup[query[1]], query[1]))
 
 
 async def m_remove(message):
-    # if game is running:
-    #   await message.channel.send('Game is ongoing.')
-    #   return
+    if running[0]:
+        await message.channel.send('Game is ongoing.')
+        return
     query = message.content.split()
-    if query[1] not in roles:
+    if query[1] not in setup:
         await invalid(message)
         return
     try:
@@ -169,8 +187,8 @@ async def m_remove(message):
     elif num <= 0:
         await message.channel.send('Invalid input: inputted quantity must be positive.')
     else:
-        await message.channel.send('Successfully removed %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (min(num, roles[query[1]]), query[1], max(0, roles[query[1]] - num), query[1]))
-        roles[query[1]] = max(0, roles[query[1]] - num)
+        await message.channel.send('Successfully removed %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (min(num, setup[query[1]]), query[1], max(0, setup[query[1]] - num), query[1]))
+        setup[query[1]] = max(0, setup[query[1]] - num)
 
 
 async def m_setup(message):
@@ -185,9 +203,9 @@ async def m_settings(message):
 
 
 async def m_toggle(message):
-    # if game is running:
-    #   await message.channel.send('Game is ongoing.')
-    #   return
+    if running[0]:
+        await message.channel.send('Game is ongoing.')
+        return
     query = message.content.split()
     if query[1] in settings:
         settings[query[1]] ^= 1
@@ -197,9 +215,9 @@ async def m_toggle(message):
 
 
 async def m_setlimit(message):
-    # if game is running:
-    #   await message.channel.send('Game is ongoing.')
-    #   return
+    if running[0]:
+        await message.channel.send('Game is ongoing.')
+        return
     query = message.content.split()
     if query[2] == 'inf':
         settings[query[1]] = query[2]
@@ -223,28 +241,34 @@ async def m_setlimit(message):
 
 
 async def m_join(message):
-    # if game is running:
-    #   await message.channel.send('Game is ongoing.')
-    #   return
+    if running[0]:
+        await message.channel.send('Game is ongoing.')
+        return
     if message.author in players:
-        await message.channel.send('[name], you are already in the game!')
+        await message.channel.send('<@%s>, you are already in the game!' % str(message.author.id))
     else:
         players[message.author] = True
-        await message.channel.send('[name] has joined the game.')
+        await message.channel.send('<@%s> has joined the game.' % str(message.author.id))
 
 
 async def m_leave(message):
-    # if game is running:
-    #   if player is alive:
-    #       end game
-    #   else:
-    #       player quits (leaves text and voice channels, loses role)
-    #   return
+    if running[0]:
+        if players[message.author.id]:
+            if settings['continue']:
+                players[message.author.id] = 0
+            else:
+                running[0] = 0
+                await message.channel.send('<@%s> has elected to leave the game.' % str(message.author.id))
+                await gameEnd(message, 'None')
+        else:
+            pass
+            # player quits (leaves text and voice channels, loses role)
+        return
     if message.author not in players:
-        await message.channel.send('[name], you were not in the game to begin with!')
+        await message.channel.send('<@%s>, you were not in the game to begin with!' % str(message.author.id))
     else:
         players.pop(message.author)
-        await message.channel.send('[name] has left the game.')
+        await message.channel.send('<@%s> has left the game.' % str(message.author.id))
 
 
 async def m_vote(message):
@@ -260,11 +284,24 @@ async def m_status(message):
 
 
 async def m_players(message):
-    pass
+    num = sum([players[key] for key in players])
+    if not running[0]:
+        if not num:
+            await message.channel.send('There are currently no players in the game. Type `m!join` to join!')
+        else:
+            await message.channel.send(' '.split(['The following players are in the game:'] + ['<@%s>' % str(key) for key in players if players[key]]))
+        return
+    await message.channel.send(' '.split(['The following players are alive:'] + ['<@%s>' % str(key) for key in players if players[key]]))
 
 
 async def m_alive(message):
-    pass
+    if not running[0]:
+        await message.channel.send('There is no ongoing game. Use `m!setup` to see the current setup of the game.')
+        return
+    if not settings['reveal']:
+        await message.channel.send('Remaining roles are unknown, due to the `reveal` setting being toggled off.')
+    else:
+        await message.channel.send('\n'.join(['Remaining roles are as follows:'] + ['`%s` : %d' % (key, sum([roles[key2] == key for key2 in roles])) for key in setup]))
 
 
 tofunc = {
