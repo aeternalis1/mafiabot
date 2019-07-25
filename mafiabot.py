@@ -405,7 +405,7 @@ async def on_message(message):
 
 
 
-client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XRYvzw._Y6KIxJ0G9BpKd6ORpj2Uhtpmpg')
+client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XToEPQ.RSuradS_3LF8CIPKw5ZwAaVyc0g')
 
 
 '''
