@@ -23,7 +23,7 @@ commands = {
     'setlimit': '`m!setlimit [phase] [time]` sets the time limit for `[phase]` to `[time]` in minutes. `[time]` can be a positive real number at least 1 or `inf`. e.g. `m!setlimit day 10`',
     'join' : '`m!join` adds you to the game.',
     'leave' : '`m!leave` removes you from the game. This may end an ongoing game, so be careful using this command.',
-    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no lynch, which will instantly end the day if a majority. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
+    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no-lynch, which will instantly end the day if in majority. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
     'unvote': '`m!unvote` sets your vote to nobody (no vote).',
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
@@ -96,13 +96,20 @@ end_text = {
 }
 
 
-running = [0]
+game = {
+    'running': 0,
+    'phase': 0      # phase of 0 for night, 1 for day
+}
 
 players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead)
+                    # player will be removed upon m!leave
 
 roles = {}          # dictionary mapping player IDs to roles (as strings)
+                    # all players will be removed upon game end (and reset next game)
 
 votes = {}          # dictionary mapping player IDS to votes (other player IDs, or None)
+                    # player will be removed upon death
+
 
 setup = {
     'villager': 0,
@@ -111,6 +118,10 @@ setup = {
     'doctor': 0,
     'mafia': 0
 }
+
+
+async def death(message):
+    await message.channel.send('<@%s> has died. Their role was %s.' % (message.author.id, roles[message.author.id]))
 
 
 async def gameEnd(message, winner):     # end of game message (role reveal, congratulation of winners)
@@ -136,11 +147,13 @@ async def m_h2p(message):
 
 
 async def m_start(message):
-    pass
+    if settings['daystart']:
+        game['phase'] = 1
+    game['running'] = 1
 
 
 async def m_end(message):
-    pass
+    game['running'] = 0
 
 
 async def m_roles(message):
@@ -148,7 +161,7 @@ async def m_roles(message):
 
 
 async def m_add(message):
-    if running[0]:
+    if game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -170,7 +183,7 @@ async def m_add(message):
 
 
 async def m_remove(message):
-    if running[0]:
+    if game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -203,7 +216,7 @@ async def m_settings(message):
 
 
 async def m_toggle(message):
-    if running[0]:
+    if game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -215,7 +228,7 @@ async def m_toggle(message):
 
 
 async def m_setlimit(message):
-    if running[0]:
+    if game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -241,61 +254,121 @@ async def m_setlimit(message):
 
 
 async def m_join(message):
-    if running[0]:
+    if game['running']:
         await message.channel.send('Game is ongoing.')
         return
-    if message.author in players:
+    if message.author.id in players:
         await message.channel.send('<@%s>, you are already in the game!' % str(message.author.id))
     else:
-        players[message.author] = True
+        players[message.author.id] = True
+        roles[message.author.id] = None
         await message.channel.send('<@%s> has joined the game.' % str(message.author.id))
 
 
 async def m_leave(message):
-    if running[0]:
+    if game['running']:
         if players[message.author.id]:
+            await message.channel.send('<@%s> has elected to leave the game.' % str(message.author.id))
+            players[message.author.id] = 0
             if settings['continue']:
-                players[message.author.id] = 0
+                await death(message.author.id)
             else:
-                running[0] = 0
-                await message.channel.send('<@%s> has elected to leave the game.' % str(message.author.id))
+                game['running'] = 0
                 await gameEnd(message, 'None')
         else:
             pass
             # player quits (leaves text and voice channels, loses role)
         return
-    if message.author not in players:
+    if message.author.id not in players:
         await message.channel.send('<@%s>, you were not in the game to begin with!' % str(message.author.id))
     else:
-        players.pop(message.author)
+        players.pop(message.author.id)
+        roles.pop(message.author.id)
         await message.channel.send('<@%s> has left the game.' % str(message.author.id))
 
 
 async def m_vote(message):
-    pass
+    if not game['running']:
+        await message.channel.send('The game has not yet started. Don\'t be so hasty to vote!')
+        return
+    if message.author.id not in players or not players[message.author.id] or not game['phase']:     # not playing, not alive, night
+        await message.channel.send('You cannot vote!')
+        return
+    query = message.content.split()
+    tar = query[1]
+    try:
+        if len(tar) <= 3 or tar[:2] != '<@' or tar[-1] != '>' or (int(tar[2:-1]) != client.user.id and int(tar[2:-1]) not in players) or (int(tar[2:-1]) in players and not players[int(tar[2:-1])]):
+            await message.channel.send('That is an invalid voting target. Vote in the form `m!vote @user`.')
+            return
+    except ValueError:
+        await message.channel.send('That is an invalid voting target. Vote in the form `m!vote @user`.')
+        return
+    await message.channel.send('<@%s> has placed their vote on <@%s>.' % (str(message.author.id), str(tar[2:-1])))
+    votes[message.author.id] = int(tar[2:-1])
 
 
 async def m_unvote(message):
-    pass
+    if not game['running']:
+        await message.channel.send('The game has not yet started. There\'s nobody to unvote!')
+        return
+    if message.author.id not in players or not players[message.author.id] or not game['phase']:     # not playing, not alive, night
+        await message.channel.send('You cannot vote!')
+        return
+    votes[message.author.id] = None
+    await message.channel.send('<@%s> has removed their vote, and is now voting nobody.' % str(message.author.id))
 
 
 async def m_status(message):
-    pass
+    if not game['running']:
+        await message.channel.send('The game has not yet started. There are no votes in effect.')
+        return
+    if message.author.id not in players or not players[message.author.id] or not game['phase']:     # not playing, not alive, night
+        await message.channel.send('Daytime is not in session. There are no votes in effect.')
+        return
+    num = sum([players[key] for key in players])
+    msg = ['The votes are currently as follows:']
+    count = {}
+    for key in players:
+        if not players[key]:
+            continue
+        if votes[key] == client.user.id:
+            msg.append('<@%s> is currently voting for a no-lynch.' % str(key))
+        elif votes[key] == None:
+            msg.append('<@%s> is currently voting for nobody.' % str(key))
+        else:
+            msg.append('<@%s> is currently voting <@%s>' % (str(key), votes[key]))
+            if votes[key] not in count:
+                count[votes[key]] = 1
+            else:
+                count[votes[key]] += 1
+    count2 = {}
+    for i in range(num+1):
+        count2[i] = []
+    for key in count:
+        count2[count[key]].append(key)
+    msg.append('Voting summary:')
+    for i in range(num,-1,-1):
+        if count2[i]:
+            msg.append(str(i) + ' vote(s) on: ' + ', '.join(['<@%s>' % str(key) for key in count2[i]]))
+    msg.append('No lynch: %d vote(s)' % sum([votes[key] == client.user.id for key in votes]))
+    msg.append('Nobody: %d vote(s)' % sum([votes[key] == None for key in votes]))
+    await message.channel.send('\n'.join([line for line in msg]))
+
 
 
 async def m_players(message):
     num = sum([players[key] for key in players])
-    if not running[0]:
+    if not game['running']:
         if not num:
             await message.channel.send('There are currently no players in the game. Type `m!join` to join!')
         else:
-            await message.channel.send(' '.split(['The following players are in the game:'] + ['<@%s>' % str(key) for key in players if players[key]]))
+            await message.channel.send(' '.join(['The following players are in the game:'] + ['<@%s>' % str(key) for key in players]))
         return
-    await message.channel.send(' '.split(['The following players are alive:'] + ['<@%s>' % str(key) for key in players if players[key]]))
+    await message.channel.send(' '.join(['The following players are alive:'] + ['<@%s>' % str(key) for key in players if players[key]]))
 
 
 async def m_alive(message):
-    if not running[0]:
+    if not game['running']:
         await message.channel.send('There is no ongoing game. Use `m!setup` to see the current setup of the game.')
         return
     if not settings['reveal']:
@@ -333,3 +406,30 @@ async def on_message(message):
 
 
 client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XRYvzw._Y6KIxJ0G9BpKd6ORpj2Uhtpmpg')
+
+
+'''
+REMINDERS:
+- message.author.id returns integer
+
+
+
+
+GAMEPLAY:
+
+All players are initially in both a text channel and a voice chat, and upon gamestart will be DM'd a role by the bot.
+
+Mafia members will be in a group DM, and upon death will be removed by the bot.
+Doctor and cop will receive a prompt by the bot each night phase
+ - Bot will list all living players (because you can't ping people not in the DM), and will prompt input of single integer
+ - Normal cop cannot investigate himself, parity cop can, doctor can save himself if selfsave = 1, mafia cannot selfkill
+
+Daytime discussion should primarily occur in VC, but players can use text channels if they want. Text channel will be used for voting and other in-game commands.
+
+
+
+Nighttime will occur in DMs. The main text channel will be locked and nobody will be able to speak there (might need to end game? rethink this).
+Graveyard text channel will be able to continue to talk.
+
+
+'''
