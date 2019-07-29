@@ -1,4 +1,5 @@
 import discord
+import random
 
 client = discord.Client()
 
@@ -101,7 +102,7 @@ game = {
     'phase': 0      # phase of 0 for night, 1 for day
 }
 
-players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead)
+players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead), init to 1 when m!join or end of last game
                     # player will be removed upon m!leave
 
 roles = {}          # dictionary mapping player IDs to roles (as strings)
@@ -125,7 +126,9 @@ async def death(message):
 
 
 async def gameEnd(message, winner):     # end of game message (role reveal, congratulation of winners)
+    game['running'] = 0
     await message.channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (key, roles[key]) for key in roles]))
+    roles.clear()
 
 
 async def invalid(message):
@@ -147,13 +150,38 @@ async def m_h2p(message):
 
 
 async def m_start(message):
+    if game['running']:
+        await message.channel.send('The game is already ongoing.')
+        return
+    if sum([setup[key] for key in setup]) != sum([players[key] for key in players]):
+        await message.channel.send('The number of roles does not match the number of players!')
+        return
+    if sum([setup[key] for key in setup]) / 2 <= setup['mafia']:
+        await message.channel.send('The setup is invalid. Mafia cannot start with half of or more than half of the total number of players.')
+        return
+    if setup['mafia'] == 0:
+        await message.channel.send('The setup is invalid. There must be at least one mafia in the game.')
+        return
+
+    # distribution of roles
+    allRoles = []
+    for key in setup:
+        allRoles = allRoles + [key] * setup[key]
+    random.shuffle(allRoles)
+    for key in players:
+        role = allRoles.pop()
+        roles[key] = role
+        user = await client.fetch_user(str(key))
+        await user.send('Your role is `%s`.' % role)
+
     if settings['daystart']:
         game['phase'] = 1
     game['running'] = 1
+    await message.channel.send('The game has begun!')
 
 
-async def m_end(message):
-    game['running'] = 0
+async def m_end(message):   # can only end game if currently playing (alive) or server mod/admin
+    await gameEnd(message, 'None')
 
 
 async def m_roles(message):
@@ -165,7 +193,7 @@ async def m_add(message):
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
-    if query[1] not in setup:
+    if query[1] not in setup or len(query) < 3:
         await invalid(message)
         return
     try:
@@ -179,7 +207,7 @@ async def m_add(message):
         await message.channel.send('Invalid input: inputted quantity must be positive.')
     else:
         setup[query[1]] += num
-        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (num, query[1], setup[query[1]], query[1]))
+        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s(s)`.' % (num, query[1], setup[query[1]], query[1]))
 
 
 async def m_remove(message):
@@ -187,7 +215,7 @@ async def m_remove(message):
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
-    if query[1] not in setup:
+    if query[1] not in setup or len(query) < 3:
         await invalid(message)
         return
     try:
@@ -200,7 +228,7 @@ async def m_remove(message):
     elif num <= 0:
         await message.channel.send('Invalid input: inputted quantity must be positive.')
     else:
-        await message.channel.send('Successfully removed %d instance(s) of `%s` to the setup, for a new total of %d `%s`s.' % (min(num, setup[query[1]]), query[1], max(0, setup[query[1]] - num), query[1]))
+        await message.channel.send('Successfully removed %d instance(s) of `%s` from the setup, for a new total of %d `%s(s)`.' % (min(num, setup[query[1]]), query[1], max(0, setup[query[1]] - num), query[1]))
         setup[query[1]] = max(0, setup[query[1]] - num)
 
 
@@ -405,13 +433,13 @@ async def on_message(message):
 
 
 
-client.run('')
+client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XT8Gug.Q_LIQJdw7fGDe-X_GVNQeJRzlKc')
 
 
 '''
 REMINDERS:
 - message.author.id returns integer
-
+- Does it require a different instance of itself per server? How does this work with DM (if a person joins in two servers). 
 
 
 
