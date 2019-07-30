@@ -3,7 +3,7 @@ import random
 
 client = discord.Client()
 
-activity = discord.Game(name="Mafioso")
+activity = discord.Game(name="m!help")
 
 @client.event
 async def on_ready():
@@ -16,8 +16,7 @@ commands = {
     'start': '`m!start` begins a new round of mafia.',
     'end': '`m!end` ends the current game, if existing. Can only be called by a moderator or a player.',
     'roles': '`m!roles` lists all available roles that can be added to the game.',
-    'add': '`m!add [role] [number]` adds `[number]`x of `[role]` to the current setup. e.g. `m!add villager 3`',
-    'remove': '`m!remove [role] [number]` removes `[number]`x of [role] from the current setup. e.g. `m!remove villager 2`',
+    'set': '`m!set [role] [number]` set the quantity of `[role]` in the setup to `[number]`. e.g. `m!set villager 3`',
     'setup': '`m!setup` shows the full complement of roles in the current setup.',
     'settings': '`m!settings` displays all the settings of the current game.',
     'toggle': '`m!toggle [setting]` flips `[setting]` from on to off, or vice versa. Type `m!settings` to see options. e.g. `m!toggle daystart`',
@@ -34,9 +33,9 @@ commands = {
 
 help_text = [
     "```List of commands```",
-    "Type t!help [command] to receive details about the command itself.",
+    "Type `m!help [command]` to receive details about the command itself.",
     "**1. Basic**: `help` `h2p` `start` `end`",
-    "**2. Setup**: `roles` `add` `remove` `setup` `settings` `toggle` `setlimit` `join` `leave`",
+    "**2. Setup**: `roles` `set` `setup` `settings` `toggle` `setlimit` `join` `leave`",
     "**3. In-game**: `vote` `unvote` `status` `players` `alive`"
 ]
 
@@ -188,7 +187,7 @@ async def m_roles(message):
     await message.channel.send('\n'.join(roles_text))
 
 
-async def m_add(message):
+async def m_set(message):
     if game['running']:
         await message.channel.send('Game is ongoing.')
         return
@@ -203,44 +202,24 @@ async def m_add(message):
         return
     if num != float(query[2]):
         await message.channel.send('Invalid input: inputted quantity must be integer.')
-    elif num <= 0:
-        await message.channel.send('Invalid input: inputted quantity must be positive.')
+    elif num < 0:
+        await message.channel.send('Invalid input: inputted quantity cannot be negative.')
     else:
-        setup[query[1]] += num
-        await message.channel.send('Successfully added %d instance(s) of `%s` to the setup, for a new total of %d `%s(s)`.' % (num, query[1], setup[query[1]], query[1]))
-
-
-async def m_remove(message):
-    if game['running']:
-        await message.channel.send('Game is ongoing.')
-        return
-    query = message.content.split()
-    if query[1] not in setup or len(query) < 3:
-        await invalid(message)
-        return
-    try:
-        num = int(query[2])
-    except ValueError:
-        await invalid(message)
-        return
-    if num != float(query[2]):
-        await message.channel.send('Invalid input: inputted quantity must be integer.')
-    elif num <= 0:
-        await message.channel.send('Invalid input: inputted quantity must be positive.')
-    else:
-        await message.channel.send('Successfully removed %d instance(s) of `%s` from the setup, for a new total of %d `%s(s)`.' % (min(num, setup[query[1]]), query[1], max(0, setup[query[1]] - num), query[1]))
-        setup[query[1]] = max(0, setup[query[1]] - num)
+        setup[query[1]] = num
+        await message.channel.send('Successfully changed the number of `%ss` in the setup to `%d`.' % (query[1], num))
 
 
 async def m_setup(message):
     if not sum([setup[key] for key in setup]):
-        await message.channel.send('There are currently no roles in the setup. Use `m!add [role] [number]` to add some!')
+        await message.channel.send('There are currently no roles in the setup. Use `m!set [role] [number]` to add some!')
         return
     await message.channel.send('\n'.join(['The setup consists of:'] + [key + ': ' + str(setup[key]) for key in setup if setup[key]]))
 
 
 async def m_settings(message):
-    await message.channel.send('\n'.join(['%s : %d - %s' % (key, settings[key], toggle_text[settings[key]][key]) for key in toggle_text[0]] + ['Time limit for %s is %s minute(s).' % (['days', 'nights'][x - 1], settings['limit' + str(x)]) for x in [1, 2]]))
+    msg = ['%s : %d - %s' % (key, settings[key], toggle_text[settings[key]][key]) for key in toggle_text[0]]
+    msg += ['Time limit for %s is %s minute(s).' % (['days', 'nights'][x - 1], settings['limit' + str(x)]) for x in [1, 2]]
+    await message.channel.send('\n'.join(msg))
 
 
 async def m_toggle(message):
@@ -406,15 +385,23 @@ async def m_alive(message):
 
 
 tofunc = {
-    'help' : m_help, 'h2p': m_h2p,
-    'start': m_start, 'end': m_end,
-    'roles': m_roles, 'add': m_add,
-    'remove': m_remove, 'setup': m_setup,
-    'settings': m_settings, 'toggle': m_toggle,
-    'setlimit': m_setlimit, 'join': m_join,
-    'leave': m_leave, 'vote': m_vote,
-    'unvote': m_unvote, 'status': m_status,
-    'players': m_players, 'alive': m_alive
+    'help' : m_help,
+    'h2p': m_h2p,
+    'start': m_start,
+    'end': m_end,
+    'roles': m_roles,
+    'set': m_set,
+    'setup': m_setup,
+    'settings': m_settings,
+    'toggle': m_toggle,
+    'setlimit': m_setlimit,
+    'join': m_join,
+    'leave': m_leave,
+    'vote': m_vote,
+    'unvote': m_unvote,
+    'status': m_status,
+    'players': m_players,
+    'alive': m_alive
 }
 
 
@@ -433,14 +420,21 @@ async def on_message(message):
 
 
 
-client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XT8Gug.Q_LIQJdw7fGDe-X_GVNQeJRzlKc')
+client.run('')
 
 
 '''
+REMEMBER TO REMOVE TOKEN WHEN COMMITTING
+
 REMINDERS:
 - message.author.id returns integer
-- Does it require a different instance of itself per server? How does this work with DM (if a person joins in two servers). 
 
+
+NOTES:
+- Does it require a different instance of itself per server? How does this work with DM (if a person joins in two servers). 
+    - Solution: make each player only capable of joining in a single distinct server
+    - Keep a map servers = {} that stores the server ID for each player...?
+    - Maybe allow voting in DMs? And bot can announce vote in main chat?
 
 
 GAMEPLAY:

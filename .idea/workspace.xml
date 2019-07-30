@@ -18,8 +18,8 @@
       <file leaf-file-name="mafiabot.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/mafiabot.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="402">
-              <caret line="463" column="0" lean-forward="true" selection-start-line="463" selection-start-column="0" selection-end-line="463" selection-end-column="0" />
+            <state relative-caret-position="210">
+              <caret line="422" column="12" lean-forward="false" selection-start-line="422" selection-start-column="12" selection-end-line="422" selection-end-column="12" />
               <folding>
                 <element signature="e#0#14#0" expanded="true" />
               </folding>
@@ -30,8 +30,8 @@
       <file leaf-file-name="test.py" pinned="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/test.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="145">
-              <caret line="187" column="51" lean-forward="true" selection-start-line="187" selection-start-column="51" selection-end-line="187" selection-end-column="51" />
+            <state relative-caret-position="328">
+              <caret line="422" column="12" lean-forward="false" selection-start-line="422" selection-start-column="12" selection-end-line="422" selection-end-column="12" />
               <folding>
                 <element signature="e#0#14#0" expanded="true" />
               </folding>
@@ -58,6 +58,12 @@
       </list>
     </option>
   </component>
+  <component name="FindInProjectRecents">
+    <findStrings>
+      <find>add</find>
+      <find>remove</find>
+    </findStrings>
+  </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -71,9 +77,9 @@
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="806" />
-    <option name="y" value="54" />
-    <option name="width" value="1052" />
+    <option name="x" value="483" />
+    <option name="y" value="56" />
+    <option name="width" value="1301" />
     <option name="height" value="897" />
   </component>
   <component name="ProjectInspectionProfilesVisibleTreeState">
@@ -205,7 +211,7 @@
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="806" y="54" width="1052" height="897" extended-state="0" />
+    <frame x="483" y="56" width="1301" height="897" extended-state="0" />
     <editor active="true" />
     <layout>
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
@@ -236,6 +242,62 @@
     <watches-manager />
   </component>
   <component name="editorHistoryManager">
+    <entry file="file://$PROJECT_DIR$/mafiabot.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="0">
+          <caret line="0" column="0" lean-forward="false" selection-start-line="0" selection-start-column="0" selection-end-line="0" selection-end-column="0" />
+          <folding>
+            <element signature="e#0#14#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="7514">
+          <caret line="442" column="84" lean-forward="false" selection-start-line="442" selection-start-column="84" selection-end-line="442" selection-end-column="84" />
+          <folding>
+            <element signature="e#0#14#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../CCC/Python1.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="493">
+          <caret line="29" column="20" lean-forward="false" selection-start-line="29" selection-start-column="20" selection-end-line="29" selection-end-column="20" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/mafiabot.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="7446">
+          <caret line="439" column="10" lean-forward="false" selection-start-line="439" selection-start-column="10" selection-end-line="439" selection-end-column="10" />
+          <folding>
+            <element signature="e#0#14#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/../CCC/Python1.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="493">
+          <caret line="29" column="20" lean-forward="false" selection-start-line="29" selection-start-column="20" selection-end-line="29" selection-end-column="20" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/test.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="7395">
+          <caret line="435" column="16" lean-forward="false" selection-start-line="435" selection-start-column="16" selection-end-line="435" selection-end-column="16" />
+          <folding>
+            <element signature="e#0#14#0" expanded="true" />
+          </folding>
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/mafiabot.py">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="0">
@@ -594,8 +656,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/test.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="145">
-          <caret line="187" column="51" lean-forward="true" selection-start-line="187" selection-start-column="51" selection-end-line="187" selection-end-column="51" />
+        <state relative-caret-position="328">
+          <caret line="422" column="12" lean-forward="false" selection-start-line="422" selection-start-column="12" selection-end-line="422" selection-end-column="12" />
           <folding>
             <element signature="e#0#14#0" expanded="true" />
           </folding>
@@ -604,8 +666,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/mafiabot.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="402">
-          <caret line="463" column="0" lean-forward="true" selection-start-line="463" selection-start-column="0" selection-end-line="463" selection-end-column="0" />
+        <state relative-caret-position="210">
+          <caret line="422" column="12" lean-forward="false" selection-start-line="422" selection-start-column="12" selection-end-line="422" selection-end-column="12" />
           <folding>
             <element signature="e#0#14#0" expanded="true" />
           </folding>
