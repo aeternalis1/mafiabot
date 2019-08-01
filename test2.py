@@ -91,6 +91,7 @@ class Player:
         self.role = None
         self.vote = None
         self.server = server
+        self.ingame = 1         # changes to 0 upon m!leave, will be removed from server.players upon game end
 
 
 class Server:
@@ -127,25 +128,27 @@ roles = {}          # dictionary mapping player IDs to roles (as strings)
 votes = {}          # dictionary mapping player IDs to votes (other player IDs, or None)
                     # player will be removed upon death
 
-servers = {}        # dictionary mapping player IDs to server they're playing in
-                    # player will be removed upon m!leave
+servers = {}        # dictionary mapping server IDs to server class
+                    # new server class will be created whenever bot is run in server
+
+allPlayers = {}     # dictionary mapping player IDs to server they're playing in
 
 
-async def death(message):
+async def death(message, server):
     await message.channel.send('<@%s> has died. Their role was %s.' % (message.author.id, roles[message.author.id]))
 
 
-async def gameEnd(message, winner):     # end of game message (role reveal, congratulation of winners)
-    game['running'] = 0
-    await message.channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (key, roles[key]) for key in roles]))
-    roles.clear()
+async def gameEnd(message, winner, server):     # end of game message (role reveal, congratulation of winners)
+    server.game['running'] = 0
+    await message.channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player, player.role) for player in server.players]))
+    server.roles.clear()
 
 
-async def invalid(message):
+async def invalid(message, server):
     await message.channel.send('Invalid request. Please refer to `m!help` for aid.')
 
 
-async def m_help(message):
+async def m_help(message, server):
     query = message.content.split()
     if len(query) == 1:
         await message.channel.send('\n'.join(help_text))
@@ -155,55 +158,55 @@ async def m_help(message):
         await invalid(message)
 
 
-async def m_h2p(message):
+async def m_h2p(message, server):
     await message.channel.send('\n'.join(h2p_text))
 
 
-async def m_start(message):
-    if game['running']:
+async def m_start(message, server):
+    if server.game['running']:
         await message.channel.send('The game is already ongoing.')
         return
-    if sum([setup[key] for key in setup]) != sum([players[key] for key in players]):
+    if sum([server.setup[key] for key in server.setup]) != sum([player.ingame for player in server.players]):
         await message.channel.send('The number of roles does not match the number of players!')
         return
-    if sum([setup[key] for key in setup]) / 2 <= setup['mafia']:
+    if sum([server.setup[key] for key in server.setup]) / 2 <= server.setup['mafia']:
         await message.channel.send('The setup is invalid. Mafia cannot start with half of or more than half of the total number of players.')
         return
-    if setup['mafia'] == 0:
+    if server.setup['mafia'] == 0:
         await message.channel.send('The setup is invalid. There must be at least one mafia in the game.')
         return
 
     # distribution of roles
     allRoles = []
-    for key in setup:
-        allRoles = allRoles + [key] * setup[key]
+    for key in server.setup:
+        allRoles = allRoles + [key] * server.setup[key]
     random.shuffle(allRoles)
-    for key in players:
+    for player in server.players:
         role = allRoles.pop()
-        roles[key] = role
-        user = await client.fetch_user(str(key))
+        player.role = role
+        user = await client.fetch_user(str(player))
         await user.send('Your role is `%s`.' % role)
 
-    if settings['daystart']:
-        game['phase'] = 1
-    game['running'] = 1
+    if server.settings['daystart']:
+        server.game['phase'] = 1
+    server.game['running'] = 1
     await message.channel.send('The game has begun!')
 
 
-async def m_end(message):   # can only end game if currently playing (alive) or server mod/admin
+async def m_end(message, server):   # can only end game if currently playing (alive) or server mod/admin
     await gameEnd(message, 'None')
 
 
-async def m_roles(message):
+async def m_roles(message, server):
     await message.channel.send('\n'.join(roles_text))
 
 
-async def m_set(message):
-    if game['running']:
+async def m_set(message, server):
+    if server.game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
-    if query[1] not in setup or len(query) < 3:
+    if query[1] not in server.setup or len(query) < 3:
         await invalid(message)
         return
     try:
@@ -217,42 +220,42 @@ async def m_set(message):
         await message.channel.send('Invalid input: inputted quantity cannot be negative.')
     else:
         num = int(num)
-        setup[query[1]] = num
+        server.setup[query[1]] = num
         await message.channel.send('Successfully changed the number of `%ss` in the setup to `%d`.' % (query[1], num))
 
 
-async def m_setup(message):
-    if not sum([setup[key] for key in setup]):
+async def m_setup(message, server):
+    if not sum([server.setup[key] for key in server.setup]):
         await message.channel.send('There are currently no roles in the setup. Use `m!set [role] [number]` to add some!')
         return
-    await message.channel.send('\n'.join(['The setup consists of:'] + [key + ': ' + str(setup[key]) for key in setup if setup[key]]))
+    await message.channel.send('\n'.join(['The setup consists of:'] + [key + ': ' + str(server.setup[key]) for key in server.setup if server.setup[key]]))
 
 
-async def m_settings(message):
-    msg = ['%s : %d - %s' % (key, settings[key], toggle_text[settings[key]][key]) for key in toggle_text[0]]
-    msg += ['Time limit for %s is %s minute(s).' % (['days', 'nights'][x - 1], settings['limit' + str(x)]) for x in [1, 2]]
+async def m_settings(message, server):
+    msg = ['%s : %d - %s' % (key, server.settings[key], toggle_text[server.settings[key]][key]) for key in toggle_text[0]]
+    msg += ['Time limit for %s is %s minute(s).' % (['days', 'nights'][x - 1], server.settings['limit' + str(x)]) for x in [1, 2]]
     await message.channel.send('\n'.join(msg))
 
 
-async def m_toggle(message):
-    if game['running']:
+async def m_toggle(message, server):
+    if server.game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
-    if query[1] in settings:
-        settings[query[1]] ^= 1
-        await message.channel.send(toggle_text[settings[query[1]]][query[1]])
+    if query[1] in server.settings:
+        server.settings[query[1]] ^= 1
+        await message.channel.send(toggle_text[server.settings[query[1]]][query[1]])
     else:
         await invalid(message)
 
 
-async def m_setlimit(message):
-    if game['running']:
+async def m_setlimit(message, server):
+    if server.game['running']:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
     if query[2] == 'inf':
-        settings[query[1]] = query[2]
+        server.settings[query[1]] = query[2]
         if query[1] == 'day':
             await message.channel.send('Time limit for day set to infinite minutes.')
         else:
@@ -263,7 +266,7 @@ async def m_setlimit(message):
             if lim < 1:                # time limit must be at least 1 minute
                 await invalid(message)
                 return
-            settings[query[1]] = lim
+            server.settings[query[1]] = lim
             if query[1] == 'night':
                 await message.channel.send('Time limit for day set to ' + query[2] + ' minutes.')
             else:
@@ -272,68 +275,74 @@ async def m_setlimit(message):
             await invalid(message)
 
 
-async def m_join(message):
-    if game['running']:
+async def m_join(message, server):
+    if server.game['running']:
         await message.channel.send('Game is ongoing.')
         return
-    if message.author.id in players:
+    if message.author.id in server.players:
         await message.channel.send('<@%s>, you are already in the game!' % str(message.author.id))
+    elif message.author.id in allPlayers:
+        await message.channel.send('<@%s>, you cannot be in more than one game at a time!' % str(message.author.id))
     else:
-        players[message.author.id] = True
-        roles[message.author.id] = None
+        allPlayers[message.author.id] = message.server
+        server.players[message.author.id] = Player(server)
         await message.channel.send('<@%s> has joined the game.' % str(message.author.id))
 
 
-async def m_leave(message):
-    if game['running']:
-        if players[message.author.id]:
+async def m_leave(message, server):
+    if message.author.id not in allPlayers or allPlayers[message.author.id] != message.server:     # not server they're playing in
+        await message.channel.send('<@%s>, you are not currently part of the game in this server.' % str(message.author.id))
+        return
+    if server.game['running'] and message.author.id in server.players:
+        if server.players[message.author.id].alive:
             await message.channel.send('<@%s> has elected to leave the game.' % str(message.author.id))
-            players[message.author.id] = 0
-            if settings['continue']:
+            server.players[message.author.id].alive = 0
+            server.players[message.author.id].ingame = 0
+            if server.settings['continue']:
                 await death(message.author.id)
             else:
-                game['running'] = 0
-                await gameEnd(message, 'None')
+                server.game['running'] = 0
+                await gameEnd(message, 'None', server)
         else:
             pass
             # player quits (leaves text and voice channels, loses role)
         return
-    if message.author.id not in players:
+    if message.author.id not in server.players:
         await message.channel.send('<@%s>, you were not in the game to begin with!' % str(message.author.id))
     else:
         players.pop(message.author.id)
-        roles.pop(message.author.id)
+        allPlayers.pop(message.author.id)
         await message.channel.send('<@%s> has left the game.' % str(message.author.id))
 
 
-async def m_vote(message):
-    if not game['running']:
+async def m_vote(message, server):
+    if not server.game['running']:
         await message.channel.send('The game has not yet started. Don\'t be so hasty to vote!')
         return
-    if message.author.id not in players or not players[message.author.id] or not game['phase']:     # not playing, not alive, night
+    if message.author.id not in server.players or not server.players[message.author.id].alive or not server.game['phase']:     # not playing, not alive, night
         await message.channel.send('You cannot vote!')
         return
     query = message.content.split()
     tar = query[1]
     try:
-        if len(tar) <= 3 or tar[:2] != '<@' or tar[-1] != '>' or (int(tar[2:-1]) != client.user.id and int(tar[2:-1]) not in players) or (int(tar[2:-1]) in players and not players[int(tar[2:-1])]):
-            await message.channel.send('That is an invalid voting target. Vote in the form `m!vote @user`.')
+        if len(tar) <= 3 or tar[:2] != '<@' or tar[-1] != '>' or (int(tar[2:-1]) != client.user.id and int(tar[2:-1]) not in server.players) or (int(tar[2:-1]) in server.players and not server.players[int(tar[2:-1])].alive):
+            await message.channel.send('That is an invalid voting target. Vote in the form `m!vote @user`, where user is a living player.')
             return
     except ValueError:
         await message.channel.send('That is an invalid voting target. Vote in the form `m!vote @user`.')
         return
     await message.channel.send('<@%s> has placed their vote on <@%s>.' % (str(message.author.id), str(tar[2:-1])))
-    votes[message.author.id] = int(tar[2:-1])
+    server.players[message.author.id].vote = int(tar[2:-1])
 
 
-async def m_unvote(message):
-    if not game['running']:
+async def m_unvote(message, server):
+    if not server.game['running']:
         await message.channel.send('The game has not yet started. There\'s nobody to unvote!')
         return
-    if message.author.id not in players or not players[message.author.id] or not game['phase']:     # not playing, not alive, night
-        await message.channel.send('You cannot vote!')
+    if message.author.id not in server.players or not server.players[message.author.id].alive or not server.game['phase']:     # not playing, not alive, night
+        await message.channel.send('You cannot change your vote at this time.')
         return
-    votes[message.author.id] = None
+    server.players[message.author.id].vote = None
     await message.channel.send('<@%s> has removed their vote, and is now voting nobody.' % str(message.author.id))
 
 
