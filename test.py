@@ -241,10 +241,11 @@ async def m_setlimit(message):
         return
     query = message.content.split()
     if query[2] == 'inf':
-        settings[query[1]] = query[2]
         if query[1] == 'day':
+            settings['limit1'] = 'inf'
             await message.channel.send('Time limit for day set to infinite minutes.')
         else:
+            settings['limit2'] = 'inf'
             await message.channel.send('Time limit for night set to infinite minutes.')
     else:
         try:
@@ -254,8 +255,10 @@ async def m_setlimit(message):
                 return
             settings[query[1]] = lim
             if query[1] == 'night':
+                settings['limit1'] = lim
                 await message.channel.send('Time limit for day set to ' + query[2] + ' minutes.')
             else:
+                settings['limit2'] = lim
                 await message.channel.send('Time limit for night set to ' + query[2] + ' minutes.')
         except ValueError:
             await invalid(message)
