@@ -196,15 +196,16 @@ async def m_set(message):
         await invalid(message)
         return
     try:
-        num = int(query[2])
+        num = float(query[2])
     except ValueError:
         await invalid(message)
         return
-    if num != float(query[2]):
+    if num != int(num[2]):
         await message.channel.send('Invalid input: inputted quantity must be integer.')
     elif num < 0:
         await message.channel.send('Invalid input: inputted quantity cannot be negative.')
     else:
+        num = int(num)
         setup[query[1]] = num
         await message.channel.send('Successfully changed the number of `%ss` in the setup to `%d`.' % (query[1], num))
 
@@ -444,6 +445,7 @@ All players are initially in both a text channel and a voice chat, and upon game
 Mafia members will be in a group DM, and upon death will be removed by the bot.
 Doctor and cop will receive a prompt by the bot each night phase
  - Bot will list all living players (because you can't ping people not in the DM), and will prompt input of single integer
+    - MAYBE USE THIS MECHANIC FOR NORMAL VOTING? TO AVOID PINGING OTHER PLAYERS
  - Normal cop cannot investigate himself, parity cop can, doctor can save himself if selfsave = 1, mafia cannot selfkill
 
 Daytime discussion should primarily occur in VC, but players can use text channels if they want. Text channel will be used for voting and other in-game commands.

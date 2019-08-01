@@ -63,17 +63,6 @@ roles_text = [
 ]
 
 
-settings = {
-    'daystart': 0,      # game starts during daytime
-    'selfsave': 0,      # doctor can save themselves
-    'conssave': 0,      # doctor can save the same person in consecutive turns
-    'continue': 0,      # continue playing even if a player leaves
-    'reveal': 0,        # reveal role of player upon death
-    'limit1': 'inf',    # time limit for days
-    'limit2': 'inf'     # time limit for nights
-}
-
-
 toggle_text = [{
     'daystart': '`daystart` toggled off: The game will commence during nighttime.',
     'selfsave': '`selfsave` toggled off: The doctor will not be able to save himself during nighttime.',
@@ -96,10 +85,38 @@ end_text = {
 }
 
 
-game = {
-    'running': 0,
-    'phase': 0      # phase of 0 for night, 1 for day
-}
+class Player:
+    def __init__(self, server):
+        self.alive = 1
+        self.role = None
+        self.vote = None
+        self.server = server
+
+
+class Server:
+    def __init__(self):
+        self.players = {}       # dictionary mapping player IDs to a Player class
+        self.game = {
+            'running': 0,
+            'phase': 0
+        }
+        self.settings = {
+            'daystart': 0,      # game starts during daytime
+            'selfsave': 0,      # doctor can save themselves
+            'conssave': 0,      # doctor can save the same person in consecutive turns
+            'continue': 0,      # continue playing even if a player leaves
+            'reveal': 0,        # reveal role of player upon death
+            'limit1': 'inf',    # time limit for days
+            'limit2': 'inf'     # time limit for nights
+        }
+        self.setup = {
+            'villager': 0,
+            'normalcop': 0,
+            'paritycop': 0,
+            'doctor': 0,
+            'mafia': 0
+        }
+
 
 players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead), init to 1 when m!join or end of last game
                     # player will be removed upon m!leave
@@ -107,17 +124,11 @@ players = {}        # dictionary mapping player IDs to alive/dead status (1 for 
 roles = {}          # dictionary mapping player IDs to roles (as strings)
                     # all players will be removed upon game end (and reset next game)
 
-votes = {}          # dictionary mapping player IDS to votes (other player IDs, or None)
+votes = {}          # dictionary mapping player IDs to votes (other player IDs, or None)
                     # player will be removed upon death
 
-
-setup = {
-    'villager': 0,
-    'normalcop': 0,
-    'paritycop': 0,
-    'doctor': 0,
-    'mafia': 0
-}
+servers = {}        # dictionary mapping player IDs to server they're playing in
+                    # player will be removed upon m!leave
 
 
 async def death(message):
