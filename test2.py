@@ -390,7 +390,6 @@ async def m_status(message, author, server):
     await message.channel.send('\n'.join([line for line in msg]))
 
 
-
 async def m_players(message, author, server):
     num = sum([player.alive for player in server.players.values()])
     if not server.game['running']:
@@ -415,11 +414,11 @@ async def m_alive(message, author, server):
 
 
 tofunc = {
-    'help' : m_help,
-    'h2p': m_h2p,
+    'help' : m_help,           # DM
+    'h2p': m_h2p,              # DM
     'start': m_start,
     'end': m_end,
-    'roles': m_roles,
+    'roles': m_roles,          # DM
     'set': m_set,
     'setup': m_setup,
     'settings': m_settings,
@@ -435,6 +434,13 @@ tofunc = {
 }
 
 
+dm_func = [
+    'help',
+    'h2p',
+    'roles'
+]
+
+
 @client.event
 async def on_message(message):
     if message.guild not in servers:
@@ -443,14 +449,17 @@ async def on_message(message):
         return
     query = message.content[2:].split()
     if len(query) and query[0] in commands:
-        func = tofunc[query[0]]
-        await func(message, message.author.id, servers[message.guild])
+        if message.channel.type == discord.ChannelType.private and query[0] not in dm_func:
+            await message.channel.send('This function cannot be used in DMs.')
+        else:
+            func = tofunc[query[0]]
+            await func(message, message.author.id, servers[message.guild])
     else:
         await invalid(message, servers[message.guild])
 
 
 
-client.run('NTk0MTg0ODU4MTM4NTc0ODQ4.XUNO_w.BI96Lb3mHPQ2x_DPx2lggglSRIc')
+client.run('')
 
 
 '''
