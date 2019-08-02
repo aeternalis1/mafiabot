@@ -1,5 +1,7 @@
 import discord
 import random
+import time
+import asyncio
 
 client = discord.Client()
 
@@ -23,7 +25,7 @@ commands = {
     'setlimit': '`m!setlimit [phase] [time]` sets the time limit for `[phase]` to `[time]` in minutes. `[time]` can be a positive real number at least 1 or `inf`. e.g. `m!setlimit day 10`',
     'join' : '`m!join` adds you to the game.',
     'leave' : '`m!leave` removes you from the game. This may end an ongoing game, so be careful using this command.',
-    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no-lynch, which will instantly end the day if in majority. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
+    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no-lynch. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
     'unvote': '`m!unvote` sets your vote to nobody (no vote).',
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
@@ -45,6 +47,8 @@ h2p_text = [
     "Mafia is a party game in which all the players are split into two opposing factions: the innocent villagers and the guilty mafia.\n",
     "The game alternates between two phases:",
     "1. Daytime, when players can discuss and debate the identity of the mafia. Players can also majority vote to lynch one member of the community who they suspect of being guilty.",
+    "\t- If the day timer reaches its time limit, a no-vote is considered equivalent to a no-lynch vote.",
+    "\t- Otherwise, daytime ends when all players have voted (regardless of if majority is reached before).",
     "2. Nighttime, when mafia are free to murder one innocent citizen of the town, and certain townspeople can use their special abilities.\n",
     "If you are a villager, your win condition is to identify and lynch all of the mafia.",
     "If you are a mafia, your win condition is to either equal or outnumber the townspeople.",
@@ -150,6 +154,56 @@ async def invalid(message, server):
     await message.channel.send('Invalid request. Please refer to `m!help` for aid.')
 
 
+async def checkVotes(channel, server):
+    for player in server.players.values():
+        if player.alive and player.vote == None:
+            return 0
+    return 1        # everyone alive has voted
+
+
+async def daytime(channel, server):
+    server.game['phase'] = 1
+    await channel.send('It is daytime! You have %s minutes to decide upon a lynch.' % str(server.settings['limit1']))
+    start_time = time.time()
+
+    for player in server.players.values():      # reset all players' votes
+        player.vote = None
+
+    while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1']) and server.game['running']:
+        if await checkVotes(channel, server):
+            break
+        await asyncio.sleep(1)
+
+    count = {None: 0}
+    for player in server.players.values():
+        if player.alive:
+            count[player.id] = 0
+
+    for player in server.players.values():
+        if player.alive:
+            if player.vote == None or player.vote == client.user.id:
+                count[None] += 1
+            else:
+                count[player.vote] += 1
+
+    lynch = None
+    for key in count:
+        if count[key] > sum([player.alive for player in server.players.values()])/2:
+            lynch = key
+
+    if lynch == None:
+        await channel.send('The townspeople have decided to lynch nobody.')
+    else:
+        await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
+        if server.settings['reveal']:
+            await channel.send('<@%s> was a `%s`!' % (str(lynch), server.players[lynch].role))
+
+
+async def nighttime(channel, server):
+    server.game['phase'] = 0
+    pass
+
+
 async def m_help(message, author, server):
     query = message.content.split()
     if len(query) == 1:
@@ -185,17 +239,21 @@ async def m_start(message, author, server):
     allRoles = []
     for key in server.setup:
         allRoles = allRoles + [key] * server.setup[key]
+
     random.shuffle(allRoles)
+
     for player in server.players.values():
         role = allRoles.pop()
         player.role = role
         user = await client.fetch_user(str(player.id))
         await user.send('Your role is `%s`.' % role)
 
-    if server.settings['daystart']:
-        server.game['phase'] = 1
     server.game['running'] = 1
     await message.channel.send('The game has begun!')
+    if server.settings['daystart']:
+        await daytime(message.channel, server)
+    else:
+        await nighttime(message.channel, server)
 
 
 async def m_end(message, author, server):   # can only end game if currently playing (alive) or server mod/admin
@@ -313,6 +371,7 @@ async def m_leave(message, author, server):
         else:
             pass
             # player quits (leaves text and voice channels, loses role)
+            # REMEMBER TO FILL THIS IN AT SOME POINT
         return
     if author not in server.players:
         await message.channel.send('<@%s>, you were not in the game to begin with!' % str(author))
@@ -362,6 +421,7 @@ async def m_status(message, author, server):
         return
     num = sum([player.alive for player in server.players.values()])
     msg = ['The votes are currently as follows:']
+
     count = {}
     for player in server.players.values():
         if not player.alive:
@@ -376,15 +436,19 @@ async def m_status(message, author, server):
                 count[player.vote] = 1
             else:
                 count[player.vote] += 1
+
     count2 = {}
     for i in range(num+1):
         count2[i] = []
+
     for key in count:
         count2[count[key]].append(key)
+
     msg.append('Voting summary:')
     for i in range(num,-1,-1):
         if count2[i]:
             msg.append(str(i) + ' vote(s) on: ' + ', '.join(['<@%s>' % str(key) for key in count2[i]]))
+
     msg.append('No lynch: %d vote(s)' % sum([player.vote == client.user.id for player in server.players.values() if player.alive]))
     msg.append('Nobody: %d vote(s)' % sum([player.vote == None for player in server.players.values() if player.alive]))
     await message.channel.send('\n'.join([line for line in msg]))
@@ -434,7 +498,7 @@ tofunc = {
 }
 
 
-dm_func = [
+dm_funcs = [
     'help',
     'h2p',
     'roles'
@@ -449,7 +513,7 @@ async def on_message(message):
         return
     query = message.content[2:].split()
     if len(query) and query[0] in commands:
-        if message.channel.type == discord.ChannelType.private and query[0] not in dm_func:
+        if message.channel.type == discord.ChannelType.private and query[0] not in dm_funcs:
             await message.channel.send('This function cannot be used in DMs.')
         else:
             func = tofunc[query[0]]
@@ -466,7 +530,7 @@ client.run('')
 REMEMBER TO REMOVE TOKEN WHEN COMMITTING
 
 REMINDERS:
-- author returns integer
+- message.author.id (author) is integer, not string
 
 
 NOTES:
@@ -488,6 +552,7 @@ Doctor and cop will receive a prompt by the bot each night phase
 
 Daytime discussion should primarily occur in VC, but players can use text channels if they want. Text channel will be used for voting and other in-game commands.
 
+SHOULD VOTING END WHEN EVERYONE VOTES? OR WHEN A MAJORITY EXISTS? (latter is epicmafia.com format)
 
 
 Nighttime will occur in DMs. The main text channel will be locked and nobody will be able to speak there (might need to end game? rethink this).
