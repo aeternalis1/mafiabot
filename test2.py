@@ -29,7 +29,8 @@ commands = {
     'unvote': '`m!unvote` sets your vote to nobody (no vote).',
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
-    'alive': '`m!alive` displays all the roles and their quantities that are still in play.'
+    'alive': '`m!alive` displays all the roles and their quantities that are still in play.',
+    'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).'
 }
 
 
@@ -38,7 +39,7 @@ help_text = [
     "Type `m!help [command]` to receive details about the command itself.",
     "**1. Basic**: `help` `h2p` `start` `end`",
     "**2. Setup**: `roles` `set` `setup` `settings` `toggle` `setlimit` `join` `leave`",
-    "**3. In-game**: `vote` `unvote` `status` `players` `alive`"
+    "**3. In-game**: `vote` `unvote` `status` `players` `alive` `dead`"
 ]
 
 
@@ -124,23 +125,17 @@ class Server:
         }
 
 
-players = {}        # dictionary mapping player IDs to alive/dead status (1 for alive, 0 for dead), init to 1 when m!join or end of last game
-                    # player will be removed upon m!leave
-
-roles = {}          # dictionary mapping player IDs to roles (as strings)
-                    # all players will be removed upon game end (and reset next game)
-
-votes = {}          # dictionary mapping player IDs to votes (other player IDs, or None)
-                    # player will be removed upon death
-
 servers = {}        # dictionary mapping server IDs to server class
                     # new server class will be created whenever bot is run in server
 
 allPlayers = {}     # dictionary mapping player IDs to server they're playing in
+                    # player removed when m!leave
 
 
 async def death(message, author, server):
-    await message.channel.send('<@%s> has died. Their role was %s.' % (author, roles[author]))
+    await message.channel.send('<@%s> has died.' % str(author))
+    if server.settings['reveal']:
+        await message.channel.send('Their role was `%s`.' % server.players[author].role)
 
 
 async def gameEnd(message, winner, server):     # end of game message (role reveal, congratulation of winners)
@@ -169,7 +164,7 @@ async def daytime(channel, server):
     for player in server.players.values():      # reset all players' votes
         player.vote = None
 
-    while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1']) and server.game['running']:
+    while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1'] * 60) and server.game['running']:
         if await checkVotes(channel, server):
             break
         await asyncio.sleep(1)
@@ -188,7 +183,7 @@ async def daytime(channel, server):
 
     lynch = None
     for key in count:
-        if count[key] > sum([player.alive for player in server.players.values()])/2:
+        if count[key] > sum([player.alive for player in server.players.values()]) / 2:
             lynch = key
 
     if lynch == None:
@@ -477,6 +472,19 @@ async def m_alive(message, author, server):
         await message.channel.send('\n'.join(msg))
 
 
+async def m_dead(message, author, server):
+    if not server.game['running']:
+        await message.channel.send('There is no ongoing game. Use `m!players` to check who\'s planning to play.')
+        return
+    if not sum([player.alive == 0 for player in server.players.values()]):
+        await message.channel.send('The graveyard is currently empty. Not for long, though...')
+        return
+    if not server.settings['reveal']:
+        await message.channel.send(' '.join(["The graveyard consists of:"] + ['<@%s>' % str(player.id) for player in server.players.values() if not player.alive]))
+    else:
+        await message.channel.send('\n'.join(['The graveyard consists of:'] + ['<@%s>, who was a %s' % (str(player.id), player.role) for player in server.players.values() if not player.alive()]))
+
+
 tofunc = {
     'help' : m_help,           # DM
     'h2p': m_h2p,              # DM
@@ -494,7 +502,8 @@ tofunc = {
     'unvote': m_unvote,
     'status': m_status,
     'players': m_players,
-    'alive': m_alive
+    'alive': m_alive,
+    'dead': m_dead
 }
 
 
