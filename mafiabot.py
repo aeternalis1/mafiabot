@@ -30,7 +30,8 @@ commands = {
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
     'alive': '`m!alive` displays all the roles and their quantities that are still in play.',
-    'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).'
+    'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).',
+    'time': '`m!time` displays the number of time left, in seconds, before the day or night ends.'
 }
 
 
@@ -39,7 +40,7 @@ help_text = [
     "Type `m!help [command]` to receive details about the command itself.",
     "**1. Basic**: `help` `h2p` `start` `end`",
     "**2. Setup**: `roles` `set` `setup` `settings` `toggle` `setlimit` `join` `leave`",
-    "**3. In-game**: `vote` `unvote` `status` `players` `alive` `dead`"
+    "**3. In-game**: `vote` `unvote` `status` `players` `alive` `dead` `time`"
 ]
 
 
@@ -158,6 +159,9 @@ async def checkVotes(channel, server):
 
 async def daytime(channel, server):
     server.game['phase'] = 1
+    server.game['time'] = server.settings['limit1']
+    if server.game['time'] != 'inf':
+        server.game['time'] *= 60       # put time in seconds
     await channel.send('It is daytime! You have %s minutes to decide upon a lynch.' % str(server.settings['limit1']))
     start_time = time.time()
 
@@ -165,6 +169,8 @@ async def daytime(channel, server):
         player.vote = None
 
     while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1'] * 60) and server.game['running']:
+        if server.game['time'] != 'inf':
+            server.game['time'] = server.settings['limit1'] * 60 - (time.time() - start_time)
         if await checkVotes(channel, server):
             break
         await asyncio.sleep(1)
@@ -485,6 +491,22 @@ async def m_dead(message, author, server):
         await message.channel.send('\n'.join(['The graveyard consists of:'] + ['<@%s>, who was a %s' % (str(player.id), player.role) for player in server.players.values() if not player.alive()]))
 
 
+async def m_time(message, author, server):
+    if not server.game['running']:
+        await message.channel.send('There is no ongoing game.')
+        return
+    if server.game['phase']:
+        if server.settings['limit1'] == 'inf':
+            await message.channel.send('There is no time limit for daytime.')
+        else:
+            await message.channel.send('There are %d minutes and %d seconds remaining in the day.' % (int(server.game['time'])/60, int(server.game['time'])%60))
+    else:
+        if server.settings['limit2'] == 'inf':
+            await message.channel.send('There is no time limit for nighttime.')
+        else:
+            await message.channel.send('There are %d minutes and %d seconds remaining in the night.' % (int(server.game['time']) / 60, int(server.game['time']) % 60))
+
+
 tofunc = {
     'help' : m_help,           # DM
     'h2p': m_h2p,              # DM
@@ -503,7 +525,8 @@ tofunc = {
     'status': m_status,
     'players': m_players,
     'alive': m_alive,
-    'dead': m_dead
+    'dead': m_dead,
+    'time': m_time
 }
 
 
