@@ -149,6 +149,7 @@ async def gameEnd(channel, winner, server):     # end of game message (role reve
     await channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
     for key in server.players:
         server.players[key].role = None
+        server.players[key].alive = True
         if not server.players[key].ingame:
             server.players.pop(key)
 
@@ -231,7 +232,7 @@ async def nighttime(channel, server):
 
     start_time = time.time()
     while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.game['running']:
-        pass
+        await asyncio.sleep(1)
 
 
 async def m_help(message, author, server):
@@ -273,8 +274,6 @@ async def m_start(message, author, server):
     random.shuffle(allRoles)
 
     for player in server.players.values():
-        player.alive = 1
-
         role = allRoles.pop()
         player.role = role
         user = await client.fetch_user(str(player.id))
@@ -289,7 +288,10 @@ async def m_start(message, author, server):
 
 
 async def m_end(message, author, server):   # can only end game if currently playing (alive) or server mod/admin
-    await gameEnd(message, 'None', server)
+    if message.author.guild_permissions.administrator or (author in server.players and server.players[author].alive):
+        await gameEnd(message.channel, 'None', server)
+    else:
+        await message.channel.send('You do not have permission to end the game!')
 
 
 async def m_roles(message, author, server):
@@ -383,6 +385,8 @@ async def m_join(message, author, server):
     else:
         allPlayers[author] = message.guild
         server.players[author] = Player(author, server)
+        role = discord.utils.get(message.guild.roles, name='Mafia')
+        await message.author.add_roles(role)
         await message.channel.send('<@%s> has joined the game.' % str(author))
 
 
@@ -403,16 +407,14 @@ async def m_leave(message, author, server):
             else:
                 await gameEnd(message.channel, 'None', server)
         else:
+            server.players[author].ingame = 0
             pass
             # player quits (leaves text and voice channels, loses role)
             # REMEMBER TO FILL THIS IN AT SOME POINT
         return
-    if author not in server.players:
-        await message.channel.send('<@%s>, you were not in the game to begin with!' % str(author))
-    else:
-        server.players.pop(author)
-        allPlayers.pop(author)
-        await message.channel.send('<@%s> has left the game.' % str(author))
+    server.players.pop(author)
+    allPlayers.pop(author)
+    await message.channel.send('<@%s> has left the game.' % str(author))
 
 
 async def m_vote(message, author, server):
@@ -574,6 +576,16 @@ dm_funcs = [
 async def on_message(message):
     if message.guild not in servers:
         servers[message.guild] = Server()
+
+        await message.guild.create_role(name='Mafia')
+        role = discord.utils.get(message.guild.roles, name='Mafia')
+        await message.guild.create_text_channel('Mafia')
+        await message.guild.create_voice_channel('Mafia')
+        for channel in message.guild.channels:
+            if channel.name == 'Mafia':
+                await channel.set_permissions(message.guild.default_role, read_messages=False)
+                await channel.set_permissions(role, read_messages=True)
+
     if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
     query = message.content[2:].split()
