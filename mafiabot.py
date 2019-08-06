@@ -99,6 +99,7 @@ class Player:
         self.vote = None
         self.server = server
         self.ingame = 1         # changes to 0 upon m!leave, will be removed from server.players upon game end
+        self.action = 0         # if a power role, if has performed night action or not
 
 
 class Server:
@@ -106,7 +107,8 @@ class Server:
         self.players = {}       # dictionary mapping player IDs to a Player class
         self.game = {
             'running': 0,
-            'phase': 0
+            'phase': 0,         # 0 for night, 1 for day
+            'actions': 0        # how many actions remain during night (to know when to end nighttime)
         }
         self.settings = {
             'daystart': 0,      # game starts during daytime
@@ -126,6 +128,9 @@ class Server:
         }
 
 
+power_roles = ['normalcop', 'paritycop', 'doctor', 'mafia']
+
+
 servers = {}        # dictionary mapping server IDs to server class
                     # new server class will be created whenever bot is run in server
 
@@ -133,17 +138,29 @@ allPlayers = {}     # dictionary mapping player IDs to server they're playing in
                     # player removed when m!leave
 
 
-async def death(message, author, server):
-    await message.channel.send('<@%s> has died.' % str(author))
+async def death(channel, id, server):
+    server.players[id].alive = 0
     if server.settings['reveal']:
-        await message.channel.send('Their role was `%s`.' % server.players[author].role)
+        await channel.send('Their role was `%s`.' % server.players[id].role)
 
 
-async def gameEnd(message, winner, server):     # end of game message (role reveal, congratulation of winners)
+async def gameEnd(channel, winner, server):     # end of game message (role reveal, congratulation of winners)
     server.game['running'] = 0
-    await message.channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
-    for player in server.players.values():
-        player.role = None
+    await channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
+    for key in server.players:
+        server.players[key].role = None
+        if not server.players[key].ingame:
+            server.players.pop(key)
+
+
+async def checkEnd(channel, server):
+    if not sum([player.role == 'mafia' for player in server.players.values() if player.alive]):  # no mafia remaining
+        await gameEnd(channel, 'Town', server)
+        return 1
+    elif sum([player.role == 'mafia' for player in server.players.values() if player.alive]) >= sum([player.role != 'mafia' for player in server.players.values() if player.alive]):
+        await gameEnd(channel, 'Mafia', server)
+        return 1
+    return 0
 
 
 async def invalid(message, server):
@@ -175,6 +192,9 @@ async def daytime(channel, server):
             break
         await asyncio.sleep(1)
 
+    if not server.game['running']:
+        return
+
     count = {None: 0}
     for player in server.players.values():
         if player.alive:
@@ -196,13 +216,22 @@ async def daytime(channel, server):
         await channel.send('The townspeople have decided to lynch nobody.')
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
-        if server.settings['reveal']:
-            await channel.send('<@%s> was a `%s`!' % (str(lynch), server.players[lynch].role))
+        await death(channel, lynch, server)
+        if await checkEnd(channel, server):
+            return
+    await nighttime(channel, server)
 
 
 async def nighttime(channel, server):
     server.game['phase'] = 0
-    pass
+    server.game['time'] = server.settings['limit2']
+    if server.game['time'] != 'inf':
+        server.game['time'] *= 60       # put time in seconds
+    await channel.send('It is now nighttime. If you have a nighttime action, you have %s minutes to take it.' % str(server.settings['limit2']))
+
+    start_time = time.time()
+    while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.game['running']:
+        pass
 
 
 async def m_help(message, author, server):
@@ -244,6 +273,8 @@ async def m_start(message, author, server):
     random.shuffle(allRoles)
 
     for player in server.players.values():
+        player.alive = 1
+
         role = allRoles.pop()
         player.role = role
         user = await client.fetch_user(str(player.id))
@@ -365,10 +396,12 @@ async def m_leave(message, author, server):
             server.players[author].alive = 0
             server.players[author].ingame = 0
             if server.settings['continue']:
-                await death(author)
+                await death(message.channel, author, server)
+                if not server.game['phase'] and server.players[author].role in power_roles and not server.players[author].action:        # if nighttime and power role unfulfilled
+                    server.game['actions'] -= 1
+                await checkEnd(message.channel, server)
             else:
-                server.game['running'] = 0
-                await gameEnd(message, 'None', server)
+                await gameEnd(message.channel, 'None', server)
         else:
             pass
             # player quits (leaves text and voice channels, loses role)
