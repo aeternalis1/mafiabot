@@ -7,9 +7,27 @@ client = discord.Client()
 
 activity = discord.Game(name="m!help")
 
+
 @client.event
 async def on_ready():
     await client.change_presence(status=discord.Status.idle, activity=activity)
+
+    for guild in client.guilds:
+        if 'Mafia' not in [role.name for role in guild.roles]:
+            await guild.create_role(name='Mafia')
+        role = discord.utils.get(guild.roles, name='Mafia')
+        found = []
+        for channel in guild.channels:
+            if channel.name == 'mafia' or channel.name == 'Mafia':
+                found.append(channel.type)
+        if discord.ChannelType.text not in found:
+            await guild.create_text_channel('mafia')
+        if discord.ChannelType.voice not in found:
+            await guild.create_voice_channel('Mafia')
+        for channel in guild.channels:
+            if channel.name == 'mafia' or channel.name == 'Mafia':
+                await channel.set_permissions(guild.default_role, read_messages = False)
+                await channel.set_permissions(role, read_messages = True)
 
 
 commands = {
@@ -576,15 +594,6 @@ dm_funcs = [
 async def on_message(message):
     if message.guild not in servers:
         servers[message.guild] = Server()
-
-        await message.guild.create_role(name='Mafia')
-        role = discord.utils.get(message.guild.roles, name='Mafia')
-        await message.guild.create_text_channel('Mafia')
-        await message.guild.create_voice_channel('Mafia')
-        for channel in message.guild.channels:
-            if channel.name == 'Mafia':
-                await channel.set_permissions(message.guild.default_role, read_messages=False)
-                await channel.set_permissions(role, read_messages=True)
 
     if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
