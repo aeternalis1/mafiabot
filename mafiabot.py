@@ -123,11 +123,11 @@ class Player:
 class Server:
     def __init__(self):
         self.players = {}       # dictionary mapping player IDs to a Player class
-        self.game = {
-            'running': 0,
-            'phase': 0,         # 0 for night, 1 for day
-            'actions': 0        # how many actions remain during night (to know when to end nighttime)
-        }
+        self.running = 0
+        self.phase = 0          # 0 for night, 1 for day
+        self.actions = 0        # how many actions remain during nighttime
+        self.time = 0           # how much time remains in the phase
+        self.saves = []         # list of doctor saves (by ID)
         self.settings = {
             'daystart': 0,      # game starts during daytime
             'selfsave': 0,      # doctor can save themselves
@@ -156,14 +156,14 @@ allPlayers = {}     # dictionary mapping player IDs to server they're playing in
                     # player removed when m!leave
 
 
-async def death(channel, id, server):
-    server.players[id].alive = 0
+async def death(channel, player, server):
+    server.players[player].alive = 0
     if server.settings['reveal']:
-        await channel.send('Their role was `%s`.' % server.players[id].role)
+        await channel.send('Their role was `%s`.' % server.players[player].role)
 
 
 async def gameEnd(channel, winner, server):     # end of game message (role reveal, congratulation of winners)
-    server.game['running'] = 0
+    server.running = 0
     await channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
     for key in server.players:
         server.players[key].role = None
@@ -194,24 +194,25 @@ async def checkVotes(channel, server):
 
 
 async def daytime(channel, server):
-    server.game['phase'] = 1
-    server.game['time'] = server.settings['limit1']
-    if server.game['time'] != 'inf':
-        server.game['time'] *= 60       # put time in seconds
     await channel.send('It is daytime! You have %s minutes to decide upon a lynch.' % str(server.settings['limit1']))
+
+    server.phase = 1
+    server.time = server.settings['limit1']
+    if server.time != 'inf':
+        server.time *= 60       # put time in seconds
     start_time = time.time()
 
     for player in server.players.values():      # reset all players' votes
         player.vote = None
 
-    while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1'] * 60) and server.game['running']:
-        if server.game['time'] != 'inf':
-            server.game['time'] = server.settings['limit1'] * 60 - (time.time() - start_time)
+    while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1'] * 60) and server.running:
+        if server.time != 'inf':
+            server.time = server.settings['limit1'] * 60 - (time.time() - start_time)
         if await checkVotes(channel, server):
             break
         await asyncio.sleep(1)
 
-    if not server.game['running']:
+    if not server.running:
         return
 
     count = {None: 0}
@@ -241,15 +242,61 @@ async def daytime(channel, server):
     await nighttime(channel, server)
 
 
+async def get_options(server):
+    res = []
+    for player in server.players.values():
+        user = client.get_user_info(player.id)
+        res.append([len(res), user, player])
+    return res
+
+
+async def m_ncop(player, server, options):
+    pass
+
+
+async def m_pcop(player, server, options):
+    pass
+
+
+async def m_doc(player, server, options):
+    pass
+
+
+async def m_maf(mafias, server, options):
+    pass
+
+
+pr_funcs = {
+    'normalcop': m_ncop,
+    'paritycop': m_pcop,
+    'doctor': m_doc,
+}
+
+
 async def nighttime(channel, server):
-    server.game['phase'] = 0
-    server.game['time'] = server.settings['limit2']
-    if server.game['time'] != 'inf':
-        server.game['time'] *= 60       # put time in seconds
     await channel.send('It is now nighttime. If you have a nighttime action, you have %s minutes to take it.' % str(server.settings['limit2']))
 
+    server.phase = 0
+    server.time = server.settings['limit2']
+    if server.time != 'inf':
+        server.time *= 60       # put time in seconds
+    server.actions = sum([player.alive and player.role in power_roles for player in server.players.values()])
+    server.saves = []
+
+    mafias = []
+    options = get_options(server)
+
+    for player in server.players.values():
+        if player.role == 'mafia':
+            mafias.append(player)
+        elif player.role in power_roles:
+            pass
+
+
     start_time = time.time()
-    while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.game['running']:
+    while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.running and server.actions:
+        if server.time != 'inf':
+            server.time = server.settings['limit2'] * 60 - (time.time() - start_time)
         await asyncio.sleep(1)
 
 
@@ -268,7 +315,7 @@ async def m_h2p(message, author, server):
 
 
 async def m_start(message, author, server):
-    if server.game['running']:
+    if server.running:
         await message.channel.send('The game is already ongoing.')
         return
 
@@ -297,7 +344,7 @@ async def m_start(message, author, server):
         user = await client.fetch_user(str(player.id))
         await user.send('Your role is `%s`.' % role)
 
-    server.game['running'] = 1
+    server.running = 1
     await message.channel.send('The game has begun!')
     if server.settings['daystart']:
         await daytime(message.channel, server)
@@ -317,7 +364,7 @@ async def m_roles(message, author, server):
 
 
 async def m_set(message, author, server):
-    if server.game['running']:
+    if server.running:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -353,7 +400,7 @@ async def m_settings(message, author, server):
 
 
 async def m_toggle(message, author, server):
-    if server.game['running']:
+    if server.running:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -365,7 +412,7 @@ async def m_toggle(message, author, server):
 
 
 async def m_setlimit(message, author, server):
-    if server.game['running']:
+    if server.running:
         await message.channel.send('Game is ongoing.')
         return
     query = message.content.split()
@@ -393,7 +440,9 @@ async def m_setlimit(message, author, server):
 
 
 async def m_join(message, author, server):
-    if server.game['running']:
+    user = await client.fetch_user(str(author))
+    print (user.name)
+    if server.running:
         await message.channel.send('Game is ongoing.')
         return
     if author in server.players:
@@ -412,15 +461,15 @@ async def m_leave(message, author, server):
     if author not in allPlayers or allPlayers[author] != message.guild:     # not server they're playing in
         await message.channel.send('<@%s>, you are not currently part of the game in this server.' % str(author))
         return
-    if server.game['running'] and author in server.players:
+    if server.running and author in server.players:
         if server.players[author].alive:
             await message.channel.send('<@%s> has elected to leave the game.' % str(author))
             server.players[author].alive = 0
             server.players[author].ingame = 0
             if server.settings['continue']:
                 await death(message.channel, author, server)
-                if not server.game['phase'] and server.players[author].role in power_roles and not server.players[author].action:        # if nighttime and power role unfulfilled
-                    server.game['actions'] -= 1
+                if not server.phase and server.players[author].role in power_roles and not server.players[author].action:        # if nighttime and power role unfulfilled
+                    server.actions -= 1
                 await checkEnd(message.channel, server)
             else:
                 await gameEnd(message.channel, 'None', server)
@@ -436,10 +485,10 @@ async def m_leave(message, author, server):
 
 
 async def m_vote(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('The game has not yet started. Don\'t be so hasty to vote!')
         return
-    if author not in server.players or not server.players[author].alive or not server.game['phase']:     # not playing, not alive, night
+    if author not in server.players or not server.players[author].alive or not server.phase:     # not playing, not alive, night
         await message.channel.send('You cannot vote!')
         return
     query = message.content.split()
@@ -456,10 +505,10 @@ async def m_vote(message, author, server):
 
 
 async def m_unvote(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('The game has not yet started. There\'s nobody to unvote!')
         return
-    if author not in server.players or not server.players[author].alive or not server.game['phase']:     # not playing, not alive, night
+    if author not in server.players or not server.players[author].alive or not server.phase:     # not playing, not alive, night
         await message.channel.send('You cannot change your vote at this time.')
         return
     server.players[author].vote = None
@@ -467,10 +516,10 @@ async def m_unvote(message, author, server):
 
 
 async def m_status(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('The game has not yet started. There are no votes in effect.')
         return
-    if author not in server.players or not server.players[author].alive or not server.game['phase']:     # not playing, not alive, night
+    if author not in server.players or not server.players[author].alive or not server.phase:     # not playing, not alive, night
         await message.channel.send('Daytime is not in session. There are no votes in effect.')
         return
     num = sum([player.alive for player in server.players.values()])
@@ -510,7 +559,7 @@ async def m_status(message, author, server):
 
 async def m_players(message, author, server):
     num = sum([player.alive for player in server.players.values()])
-    if not server.game['running']:
+    if not server.running:
         if not num:
             await message.channel.send('There are currently no players in the game. Type `m!join` to join!')
         else:
@@ -520,7 +569,7 @@ async def m_players(message, author, server):
 
 
 async def m_alive(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('There is no ongoing game. Use `m!setup` to see the current setup of the game.')
         return
     if not server.settings['reveal']:
@@ -532,7 +581,7 @@ async def m_alive(message, author, server):
 
 
 async def m_dead(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('There is no ongoing game. Use `m!players` to check who\'s planning to play.')
         return
     if not sum([player.alive == 0 for player in server.players.values()]):
@@ -545,19 +594,19 @@ async def m_dead(message, author, server):
 
 
 async def m_time(message, author, server):
-    if not server.game['running']:
+    if not server.running:
         await message.channel.send('There is no ongoing game.')
         return
-    if server.game['phase']:
+    if server.phase:
         if server.settings['limit1'] == 'inf':
             await message.channel.send('There is no time limit for daytime.')
         else:
-            await message.channel.send('There are %d minutes and %d seconds remaining in the day.' % (int(server.game['time'])/60, int(server.game['time'])%60))
+            await message.channel.send('There are %d minutes and %d seconds remaining in the day.' % (int(server.time)/60, int(server.time)%60))
     else:
         if server.settings['limit2'] == 'inf':
             await message.channel.send('There is no time limit for nighttime.')
         else:
-            await message.channel.send('There are %d minutes and %d seconds remaining in the night.' % (int(server.game['time']) / 60, int(server.game['time']) % 60))
+            await message.channel.send('There are %d minutes and %d seconds remaining in the night.' % (int(server.time) / 60, int(server.time) % 60))
 
 
 tofunc = {
