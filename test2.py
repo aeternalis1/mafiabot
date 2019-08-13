@@ -663,9 +663,9 @@ async def on_message(message):
     if message.guild not in servers:
         servers[message.guild] = Server()
 
-    if message.channel.type == discord.ChannelType.private and message.user.id in allPlayers:
-        server = servers[allPlayers[message.user.id]]
-        player = server.players[message.user.id]
+    if message.channel.type == discord.ChannelType.private and message.author.id in allPlayers:
+        server = servers[allPlayers[message.author.id]]
+        player = server.players[message.author.id]
         if server.running and not server.phase and player.alive and player.role in power_roles and not player.action:
             check_action(player, server, message)
 
