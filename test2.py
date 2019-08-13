@@ -118,6 +118,8 @@ class Player:
         self.server = server
         self.ingame = 1         # changes to 0 upon m!leave, will be removed from server.players upon game end
         self.action = 0         # if a power role, if has performed night action or not
+        self.cur_choice = None  # if a power role, their choice for the night
+        self.lst_choice = None  # if parity cop, last choice
 
 
 class Server:
@@ -128,6 +130,7 @@ class Server:
         self.actions = 0        # how many actions remain during nighttime
         self.time = 0           # how much time remains in the phase
         self.saves = []         # list of doctor saves (by ID)
+        self.options = []       # nighttime options for power roles (list of players)
         self.settings = {
             'daystart': 0,      # game starts during daytime
             'selfsave': 0,      # doctor can save themselves
@@ -162,7 +165,7 @@ async def death(channel, player, server):
         await channel.send('Their role was `%s`.' % server.players[player].role)
 
 
-async def gameEnd(channel, winner, server):     # end of game message (role reveal, congratulation of winners)
+async def game_end(channel, winner, server):     # end of game message (role reveal, congratulation of winners)
     server.running = 0
     await channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
     for key in server.players:
@@ -172,12 +175,12 @@ async def gameEnd(channel, winner, server):     # end of game message (role reve
             server.players.pop(key)
 
 
-async def checkEnd(channel, server):
+async def check_end(channel, server):
     if not sum([player.role == 'mafia' for player in server.players.values() if player.alive]):  # no mafia remaining
-        await gameEnd(channel, 'Town', server)
+        await game_end(channel, 'Town', server)
         return 1
     elif sum([player.role == 'mafia' for player in server.players.values() if player.alive]) >= sum([player.role != 'mafia' for player in server.players.values() if player.alive]):
-        await gameEnd(channel, 'Mafia', server)
+        await game_end(channel, 'Mafia', server)
         return 1
     return 0
 
@@ -186,7 +189,7 @@ async def invalid(message, server):
     await message.channel.send('Invalid request. Please refer to `m!help` for aid.')
 
 
-async def checkVotes(channel, server):
+async def check_votes(channel, server):
     for player in server.players.values():
         if player.alive and player.vote == None:
             return 0
@@ -208,7 +211,7 @@ async def daytime(channel, server):
     while (server.settings['limit1'] == 'inf' or (time.time() - start_time) < server.settings['limit1'] * 60) and server.running:
         if server.time != 'inf':
             server.time = server.settings['limit1'] * 60 - (time.time() - start_time)
-        if await checkVotes(channel, server):
+        if await check_votes(channel, server):
             break
         await asyncio.sleep(1)
 
@@ -237,32 +240,49 @@ async def daytime(channel, server):
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
         await death(channel, lynch, server)
-        if await checkEnd(channel, server):
+        if await check_end(channel, server):
             return
     await nighttime(channel, server)
 
 
 async def get_options(server):
-    res = []
+    server.options = []
     for player in server.players.values():
-        user = client.get_user_info(player.id)
-        res.append([len(res), user, player])
-    return res
+        user = await client.fetch_user(player.id)
+        server.options.append([len(server.options), user, player])
 
 
-async def m_ncop(player, server, options):
+async def output_options(player, server):
+    user = await client.fetch_user(str(player.id))
+    await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in server.options]))
+
+
+async def m_ncop(player, server):
+    user = await client.fetch_user(str(player.id))
+    await user.send("Please select a player to investigate, by sending the number corresponding to your choice:")
+    await output_options(player, server)
     pass
 
 
-async def m_pcop(player, server, options):
+async def m_pcop(player, server):
+    user = await client.fetch_user(str(player.id))
+    await user.send("Please select a player to investigate, by sending the number corresponding to your choice:")
+    await output_options(player, server)
     pass
 
 
-async def m_doc(player, server, options):
+async def m_doc(player, server):
+    user = await client.fetch_user(str(player.id))
+    await user.send("Please select a player to save, by sending the number corresponding to your choice:")
+    await output_options(player, server)
     pass
 
 
-async def m_maf(mafias, server, options):
+async def m_maf(mafias, server):
+    pass
+
+
+async def check_action(player, server, message):
     pass
 
 
@@ -284,13 +304,14 @@ async def nighttime(channel, server):
     server.saves = []
 
     mafias = []
-    options = get_options(server)
+    await get_options(server)
 
     for player in server.players.values():
         if player.role == 'mafia':
             mafias.append(player)
         elif player.role in power_roles:
-            pass
+            func = pr_funcs[player.role]
+            await func(player, server)
 
 
     start_time = time.time()
@@ -354,7 +375,7 @@ async def m_start(message, author, server):
 
 async def m_end(message, author, server):   # can only end game if currently playing (alive) or server mod/admin
     if message.author.guild_permissions.administrator or (author in server.players and server.players[author].alive):
-        await gameEnd(message.channel, 'None', server)
+        await game_end(message.channel, 'None', server)
     else:
         await message.channel.send('You do not have permission to end the game!')
 
@@ -440,8 +461,6 @@ async def m_setlimit(message, author, server):
 
 
 async def m_join(message, author, server):
-    user = await client.fetch_user(str(author))
-    print (user.name)
     if server.running:
         await message.channel.send('Game is ongoing.')
         return
@@ -470,9 +489,9 @@ async def m_leave(message, author, server):
                 await death(message.channel, author, server)
                 if not server.phase and server.players[author].role in power_roles and not server.players[author].action:        # if nighttime and power role unfulfilled
                     server.actions -= 1
-                await checkEnd(message.channel, server)
+                await check_end(message.channel, server)
             else:
-                await gameEnd(message.channel, 'None', server)
+                await game_end(message.channel, 'None', server)
         else:
             server.players[author].ingame = 0
             pass
@@ -609,7 +628,7 @@ async def m_time(message, author, server):
             await message.channel.send('There are %d minutes and %d seconds remaining in the night.' % (int(server.time) / 60, int(server.time) % 60))
 
 
-tofunc = {
+to_func = {
     'help' : m_help,           # DM
     'h2p': m_h2p,              # DM
     'start': m_start,
@@ -644,14 +663,21 @@ async def on_message(message):
     if message.guild not in servers:
         servers[message.guild] = Server()
 
+    if message.channel.type == discord.ChannelType.private and message.user.id in allPlayers:
+        server = servers[allPlayers[message.user.id]]
+        player = server.players[message.user.id]
+        if server.running and not server.phase and player.alive and player.role in power_roles and not player.action:
+            check_action(player, server, message)
+
     if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
+
     query = message.content[2:].split()
     if len(query) and query[0] in commands:
         if message.channel.type == discord.ChannelType.private and query[0] not in dm_funcs:
             await message.channel.send('This function cannot be used in DMs.')
         else:
-            func = tofunc[query[0]]
+            func = to_func[query[0]]
             await func(message, message.author.id, servers[message.guild])
     else:
         await invalid(message, servers[message.guild])
