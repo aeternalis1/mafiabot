@@ -81,7 +81,7 @@ roles_text = [
     "**Roles:**",
     "`villager`: Village-aligned role. No special powers.",
     "`normalcop`: Village-aligned role, capable of determining the alignment of a target player during nighttime.",
-    "`paritycop`: Village-aligned role, capable of determining whether his LAST TWO targets are of the same alignment.",
+    "`paritycop`: Village-aligned role, capable of determining whether his LAST TWO targets are of the same alignment (will not get a report after night 1).",
     "`doctor`: Village-aligned role, capable of saving a target player from death during nighttime.",
     "`mafia`: Mafia-aligned role. Capable of killing a villager during nighttime with fellow mafia."
 ]
@@ -89,14 +89,14 @@ roles_text = [
 
 toggle_text = [{
     'daystart': '`daystart` toggled off: The game will commence during nighttime.',
-    'selfsave': '`selfsave` toggled off: The doctor will not be able to save himself during nighttime.',
-    'conssave': '`conssave` toggled off: The doctor will not be able to save the same patient over consecutive nights.',
+    'selfsave': '`selfsave` toggled off: Doctors will not be able to save themselves during nighttime.',
+    'conssave': '`conssave` toggled off: Doctor will not be able to save the same patient over consecutive nights.',
     'continue': '`continue` toggled off: The game will end if a living player quits.',
     'reveal': '`reveal` toggled off: When a player dies, their role will not be revealed.'
 }, {
     'daystart': '`daystart` toggled on: The game will commence during daytime.',
-    'selfsave': '`selfsave` toggled on: The doctor will be able to save himself during nighttime.',
-    'conssave': '`conssave` toggled on: The doctor will be able to save the same patient over consecutive nights.',
+    'selfsave': '`selfsave` toggled on: Doctors will be able to save themselves during nighttime.',
+    'conssave': '`conssave` toggled on: Doctor will be able to save the same patient over consecutive nights.',
     'continue': '`continue` toggled on: The game will not end if a living player quits.',
     'reveal': '`reveal` toggled on: When a player dies, their role will be revealed.'
 }]
@@ -117,6 +117,7 @@ class Player:
         self.vote = None
         self.server = server
         self.ingame = 1         # changes to 0 upon m!leave, will be removed from server.players upon game end
+        self.options = []       # nighttime options for power role
         self.action = 0         # if a power role, if has performed night action or not
         self.cur_choice = None  # if a power role, their choice for the night
         self.lst_choice = None  # if parity cop, last choice
@@ -129,8 +130,8 @@ class Server:
         self.phase = 0          # 0 for night, 1 for day
         self.actions = 0        # how many actions remain during nighttime
         self.time = 0           # how much time remains in the phase
+        self.round = 0          # what day/night of the game it is (e.g. day 1, night 2, etc)
         self.saves = []         # list of doctor saves (by ID)
-        self.options = []       # nighttime options for power roles (list of players)
         self.settings = {
             'daystart': 0,      # game starts during daytime
             'selfsave': 0,      # doctor can save themselves
@@ -169,8 +170,6 @@ async def game_end(channel, winner, server):     # end of game message (role rev
     server.running = 0
     await channel.send('\n'.join([end_text[winner]] + ['The roles were as follows:'] + ['<@%s> : `%s`' % (player.id, player.role) for player in server.players.values()]))
     for key in server.players:
-        server.players[key].role = None
-        server.players[key].alive = True
         if not server.players[key].ingame:
             server.players.pop(key)
 
@@ -197,12 +196,42 @@ async def check_votes(channel, server):
 
 
 async def daytime(channel, server):
-    await channel.send('It is daytime! You have %s minutes to decide upon a lynch.' % str(server.settings['limit1']))
+    if server.settings['daystart']:
+        server.round += 1
+
+    if not (server.settings['daystart'] and server.round == 1):     # night actions were taken
+        for player in server.players.values():
+            if player.alive and player.role == 'normalcop':
+                user = await client.fetch_user(str(player.id))
+                if player.cur_choice == None:
+                    user.send('You inquired about nobody, and so you receive no report.')
+                else:
+                    target = await client.fetch_user(str(player.cur_choice.id))
+                    user.send('You received a report that **%s** is %s.' % (target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
+            elif player.alive and player.role == 'paritycop':
+                user = await client.fetch_user(str(player.id))
+                if player.cur_choice == None:
+                    user.send('You inquired about nobody, and so you receive no report.')
+                elif player.lst_choice == None:
+                    target = await client.fetch_user(str(player.lst_choice.id))
+                    user.send('Your next target will be compared to **%s**, and you will determine whether their alignments are the same or not.' % target.name)
+                else:
+                    lst = await client.fetch_user(str(player.lst_choice.id))
+                    cur = await client.fetch_user(str(player.cur_choice.id))
+                    if [player.lst_choice.role, player.cur_choice.role].count('mafia') == 1 or player.lst_choice.role != player.cur_choice.role:
+                        user.send('You received a report that **%s** and **%s** are of different alignments.' % (lst.name, cur.name))
+                    else:
+                        user.send('You received a report that **%s** and **%s** are of the same alignment.' % (lst.name, cur.name))
+
+        ## handle mafia kill right around here ##
+
+    await channel.send('It is day %d! You have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
 
     server.phase = 1
     server.time = server.settings['limit1']
     if server.time != 'inf':
         server.time *= 60       # put time in seconds
+
     start_time = time.time()
 
     for player in server.players.values():      # reset all players' votes
@@ -245,44 +274,53 @@ async def daytime(channel, server):
     await nighttime(channel, server)
 
 
-async def get_options(server):
-    server.options = []
-    for player in server.players.values():
-        user = await client.fetch_user(player.id)
-        server.options.append([len(server.options), user, player])
+options_text = {
+    'normalcop': 'Please select a player to investigate, by sending the number corresponding to your choice.',
+    'paritycop': 'Please select a player to investigate, by sending the number corresponding to your choice.',
+    'doctor': 'Please select a player to save, by sending the number corresponding to your choice:'
+}
+
+
+async def get_options(player, server):
+    player.options = []
+    for p in server.players.values():
+        if p == player and not (role == 'doctor' and server.settings['selfsave']):
+            continue
+        user = await client.fetch_user(p.id)
+        player.options.append([len(server.options), user, p])
 
 
 async def output_options(player, server):
     user = await client.fetch_user(str(player.id))
-    await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in server.options]))
+    await user.send(options_text[player.role])
+    await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in player.options]))
 
 
-async def m_ncop(player, server):
+async def m_ncop(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    await user.send("Please select a player to investigate, by sending the number corresponding to your choice:")
-    await output_options(player, server)
-    pass
+    target = player.choices[choice][1].name
+    user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
+    user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
-async def m_pcop(player, server):
+async def m_pcop(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    await user.send("Please select a player to investigate, by sending the number corresponding to your choice:")
-    await output_options(player, server)
-    pass
+    target = player.choices[choice][1].name
+    if not player.lst_choice:
+        user.send('You have selected **%s** as the target of your investigation. You will not recieve a report in the morning, as you are a parity cop.' % target)
+    else:
+        user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
+    user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
-async def m_doc(player, server):
+async def m_doc(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    await user.send("Please select a player to save, by sending the number corresponding to your choice:")
-    await output_options(player, server)
-    pass
+    target = player.choices[choice][1].name
+    user.send('You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
+    user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
-async def m_maf(mafias, server):
-    pass
-
-
-async def check_action(player, server, message):
+async def m_maf(mafias, server, choice):
     pass
 
 
@@ -293,8 +331,28 @@ pr_funcs = {
 }
 
 
+async def check_action(player, server, message):
+    query = message.content.split()
+    try:
+        choice = int(query[0])
+        if choice < 0 or choice >= len(player.options):
+            message.channel.send('Please input a valid option.')
+            return
+        player.cur_choice = player.options[choice][2]
+        if not player.action:
+            player.action = 1
+            server.actions -= 1
+        func = pr_funcs[player.role]
+        await func(player, server, choice)
+    except:
+        message.channel.send('Please input a valid option.')
+
+
 async def nighttime(channel, server):
-    await channel.send('It is now nighttime. If you have a nighttime action, you have %s minutes to take it.' % str(server.settings['limit2']))
+    if not server.settings['daystart']:
+        server.round += 1
+
+    await channel.send('It is now night %d. If you have a nighttime action, you have %s minutes to take it.' % (server.round, str(server.settings['limit2'])))
 
     server.phase = 0
     server.time = server.settings['limit2']
@@ -304,15 +362,17 @@ async def nighttime(channel, server):
     server.saves = []
 
     mafias = []
-    await get_options(server)
 
     for player in server.players.values():
         if player.role == 'mafia':
+            player.action = 0
             mafias.append(player)
         elif player.role in power_roles:
-            func = pr_funcs[player.role]
-            await func(player, server)
-
+            player.action = 0
+            if player.cur_choice:
+                player.lst_choice = player.cur_choice
+            await get_options(player, server)
+            await output_options(player, server)
 
     start_time = time.time()
     while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.running and server.actions:
@@ -365,7 +425,16 @@ async def m_start(message, author, server):
         user = await client.fetch_user(str(player.id))
         await user.send('Your role is `%s`.' % role)
 
+    # resetting player variables
+    for player in server.players.values():
+        player.cur_choice = None
+        player.lst_choice = None
+        player.vote = None
+        player.alive = 1
+
+
     server.running = 1
+    server.round = 0
     await message.channel.send('The game has begun!')
     if server.settings['daystart']:
         await daytime(message.channel, server)
@@ -666,7 +735,7 @@ async def on_message(message):
     if message.channel.type == discord.ChannelType.private and message.author.id in allPlayers:
         server = servers[allPlayers[message.author.id]]
         player = server.players[message.author.id]
-        if server.running and not server.phase and player.alive and player.role in power_roles and not player.action:
+        if server.running and not server.phase and player.alive and player.role in power_roles:
             check_action(player, server, message)
 
     if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
