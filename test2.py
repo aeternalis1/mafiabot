@@ -222,6 +222,8 @@ async def daytime(channel, server):
                         user.send('You received a report that **%s** and **%s** are of different alignments.' % (lst.name, cur.name))
                     else:
                         user.send('You received a report that **%s** and **%s** are of the same alignment.' % (lst.name, cur.name))
+            elif player.alive and player.role == 'doctor' and player.action:
+                server.saves.append(player.cur_choice)
 
         ## handle mafia kill right around here ##
 
@@ -284,9 +286,11 @@ options_text = {
 async def get_options(player, server):
     player.options = []
     for p in server.players.values():
-        if p == player and not (role == 'doctor' and server.settings['selfsave']):
+        if p == player and not (player.role == 'doctor' and server.settings['selfsave']) and not player.role == 'paritycop':
             continue
-        user = await client.fetch_user(p.id)
+        if player.role == 'paritycop' and p == player.lst_choice:
+            continue
+        user = await client.fetch_user(str(p.id))
         player.options.append([len(server.options), user, p])
 
 
@@ -296,31 +300,50 @@ async def output_options(player, server):
     await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in player.options]))
 
 
+async def maf_options(mafias, server):
+    options = [[0, client.user, None]]
+    for player in server.players:
+        if player.alive and player.role != 'mafia':
+            options.append([len(options), await client.fetch_user(str(player.id)), player])
+    for player in mafias:
+        player.options = options
+        user = await client.fetch_user(str(player.id))
+        if len(mafias) > 1:
+            await user.send('The other remaining mafia are:\n' + '\n'.join(['**%s**' % (await client.fetch_user(str(mafia.id))).name for mafia in mafias if mafia != player]))
+            await user.send('You will be notified of their votes regarding whom to kill. If a majority is not reached by daytime, nobody will be targeted.')
+        else:
+            await user.send('You are the only remaining mafia.')
+        await user.send('Please select a player to kill, by sending the corresponding number. Selecting this bot will represent the choice to no-kill.')
+        await user.send('\n'.join(['%d - **%s**' % (option[0], option[1].name) for option in player.options]))
+
+
 async def m_ncop(player, server, choice):
     user = await client.fetch_user(str(player.id))
     target = player.choices[choice][1].name
-    user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
-    user.send('You may change your choice as long as not everyone has completed their night action.')
+    await user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
+    await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
 async def m_pcop(player, server, choice):
     user = await client.fetch_user(str(player.id))
     target = player.choices[choice][1].name
     if not player.lst_choice:
-        user.send('You have selected **%s** as the target of your investigation. You will not recieve a report in the morning, as you are a parity cop.' % target)
+        await user.send('You have selected **%s** as the target of your investigation. Remember that you will not recieve a report in the morning, as you are a parity cop.' % target)
     else:
-        user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
-    user.send('You may change your choice as long as not everyone has completed their night action.')
+        lst = await client.fetch_user(str(player.lst_choice))
+        await user.send('You have selected **%s** as the target of your investigation, to be compared to **%s**. You will recieve a report in the morning.' % (target, lst.name))
+    await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
 async def m_doc(player, server, choice):
     user = await client.fetch_user(str(player.id))
     target = player.choices[choice][1].name
-    user.send('You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
-    user.send('You may change your choice as long as not everyone has completed their night action.')
+    await user.send('You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
+    await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
-async def m_maf(mafias, server, choice):
+async def m_maf(player, server, choice):
+
     pass
 
 
@@ -328,6 +351,7 @@ pr_funcs = {
     'normalcop': m_ncop,
     'paritycop': m_pcop,
     'doctor': m_doc,
+    'mafia': m_maf
 }
 
 
@@ -374,11 +398,15 @@ async def nighttime(channel, server):
             await get_options(player, server)
             await output_options(player, server)
 
+    await maf_options(mafias, server)
+
     start_time = time.time()
     while (server.settings['limit2'] == 'inf' or (time.time() - start_time) < server.settings['limit2'] * 60) and server.running and server.actions:
         if server.time != 'inf':
             server.time = server.settings['limit2'] * 60 - (time.time() - start_time)
         await asyncio.sleep(1)
+
+    await daytime(channel, server)
 
 
 async def m_help(message, author, server):
@@ -764,17 +792,15 @@ REMINDERS:
 
 
 NOTES:
-- Does it require a different instance of itself per server? How does this work with DM (if a person joins in two servers). 
-    - Solution: make each player only capable of joining in a single distinct server
-    - Keep a map servers = {} that stores the server ID for each player...?
-    - Maybe allow voting in DMs? And bot can announce vote in main chat?
 - REMEMBER TO DISTINGUISH BETWEEN COMMANDS YOU CAN USE IN DM AND COMMANDS YOU CAN'T
 
 GAMEPLAY:
 
 All players are initially in both a text channel and a voice chat, and upon gamestart will be DM'd a role by the bot.
 
-Mafia members will be in a group DM, and upon death will be removed by the bot.
+Mafia members will be DM'd by the bot, notifying them of the other mafia members, and will update on other mafias' votes.
+ - There will be no direct communication between mafia (because bot cannot be in groupchat)
+
 Doctor and cop will receive a prompt by the bot each night phase
  - Bot will list all living players (because you can't ping people not in the DM), and will prompt input of single integer
     - MAYBE USE THIS MECHANIC FOR NORMAL VOTING? TO AVOID PINGING OTHER PLAYERS
