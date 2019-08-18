@@ -36,20 +36,20 @@ commands = {
     'start': '`m!start` begins a new round of mafia.',
     'end': '`m!end` ends the current game, if existing. Can only be called by a moderator or a player.',
     'roles': '`m!roles` lists all available roles that can be added to the game.',
-    'set': '`m!set [role] [number]` set the quantity of `[role]` in the setup to `[number]`. e.g. `m!set villager 3`',
+    'set': '`m!set [role] [number]` sets the quantity of `[role]` in the setup to `[number]`. e.g. `m!set villager 3`',
     'setup': '`m!setup` shows the full complement of roles in the current setup.',
     'settings': '`m!settings` displays all the settings of the current game.',
     'toggle': '`m!toggle [setting]` flips `[setting]` from on to off, or vice versa. Type `m!settings` to see options. e.g. `m!toggle daystart`',
     'setlimit': '`m!setlimit [phase] [time]` sets the time limit for `[phase]` to `[time]` in minutes. `[time]` can be a positive real number at least 1 or `inf`. e.g. `m!setlimit day 10`',
     'join' : '`m!join` adds you to the game.',
     'leave' : '`m!leave` removes you from the game. This may end an ongoing game, so be careful using this command.',
-    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no-lynch. e.g. `m!vote @mafiabot`', # <------ get id of bot and put here
+    'vote': '`m!vote [player]` puts your current vote on `player`. Vote this bot to set your vote to no-lynch. e.g. `m!vote @mafiabot`',
     'unvote': '`m!unvote` sets your vote to nobody (no vote).',
     'status': '`m!status` displays all players and their votes, as well as the vote count on each player.',
     'players': '`m!players` displays all players who are currently alive',
     'alive': '`m!alive` displays all the roles and their quantities that are still in play.',
     'dead': '`m!dead` displays the players in the graveyard and their roles (if roles are revealed upon death).',
-    'time': '`m!time` displays the number of time left, in seconds, before the day or night ends.'
+    'time': '`m!time` displays the amount of time left, before the day or night ends.'
 }
 
 
@@ -292,6 +292,8 @@ async def get_options(player, server):
             continue
         if player.role == 'paritycop' and p == player.lst_choice:
             continue
+        if player.role == 'doctor' and p == player.lst_choice:
+            continue
         user = await client.fetch_user(str(p.id))
         player.options.append([len(server.options), user, p])
 
@@ -489,6 +491,9 @@ async def m_start(message, author, server):
 
 
 async def m_end(message, author, server):   # can only end game if currently playing (alive) or server mod/admin
+    if not server.running:
+        await message.channel.send('There is no ongoing game to end.')
+        return
     if message.author.guild_permissions.administrator or (author in server.players and server.players[author].alive):
         await game_end(message.channel, 'None', server)
     else:
