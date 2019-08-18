@@ -200,15 +200,16 @@ async def daytime(channel, server):
         server.round += 1
 
     if not (server.settings['daystart'] and server.round == 1):     # night actions were taken
+        server.saves = []
         for player in server.players.values():
-            if player.alive and player.role == 'normalcop':
+            if player.alive and player.role == 'normalcop':         # normal cop report
                 user = await client.fetch_user(str(player.id))
                 if player.cur_choice == None:
                     user.send('You inquired about nobody, and so you receive no report.')
                 else:
                     target = await client.fetch_user(str(player.cur_choice.id))
                     user.send('You received a report that **%s** is %s.' % (target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
-            elif player.alive and player.role == 'paritycop':
+            elif player.alive and player.role == 'paritycop':       # parity cop report
                 user = await client.fetch_user(str(player.id))
                 if player.cur_choice == None:
                     user.send('You inquired about nobody, and so you receive no report.')
@@ -222,10 +223,22 @@ async def daytime(channel, server):
                         user.send('You received a report that **%s** and **%s** are of different alignments.' % (lst.name, cur.name))
                     else:
                         user.send('You received a report that **%s** and **%s** are of the same alignment.' % (lst.name, cur.name))
-            elif player.alive and player.role == 'doctor' and player.action:
+            elif player.alive and player.role == 'doctor' and player.action:    # doctor save
                 server.saves.append(player.cur_choice)
 
-        ## handle mafia kill right around here ##
+        # mafia kill
+
+        tars = [player.cur_choice for player in server.players if (player.alive and player.role == 'mafia')]
+        kill = None
+        for tar in tars:
+            if tars.count(tar) > len(tars)/2:
+                kill = tar
+
+        if kill != None and kill not in server.saves:
+            await channel.send('<@%s> has been killed in the night!' % str(kill.id))
+            await death(channel, kill.id, server)
+            if await check_end(channel, server):
+                return
 
     await channel.send('It is day %d! You have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
 
@@ -249,24 +262,13 @@ async def daytime(channel, server):
     if not server.running:
         return
 
-    count = {None: 0}
-    for player in server.players.values():
-        if player.alive:
-            count[player.id] = 0
-
-    for player in server.players.values():
-        if player.alive:
-            if player.vote == None or player.vote == client.user.id:
-                count[None] += 1
-            else:
-                count[player.vote] += 1
-
+    votes = [player.vote for player in server.players.values() if player.alive]
     lynch = None
-    for key in count:
-        if count[key] > sum([player.alive for player in server.players.values()]) / 2:
-            lynch = key
+    for vote in votes:
+        if votes.count(vote) > len(votes)/2:
+            lynch = vote
 
-    if lynch == None:
+    if lynch == None or lynch == client.user.id:
         await channel.send('The townspeople have decided to lynch nobody.')
     else:
         await channel.send('The townspeople have lynched <@%s>.' % str(lynch))
@@ -343,8 +345,24 @@ async def m_doc(player, server, choice):
 
 
 async def m_maf(player, server, choice):
+    user = await client.fetch_user(str(player.id))
+    target = player.choices[choice][1].name
+    await user.send('You have selected **%s** as your target to kill.' % target)
 
-    pass
+    tars = [player.cur_choice for player in server.players.values() if (player.alive and player.role == 'mafia')]
+    maj = None
+    for tar in tars:
+        if tars.count(tar) > len(tars)/2:
+            maj = tar
+
+    if maj == None:
+        await user.send('There is presently no majority in your votes.')
+    else:
+        await user.send('There is presently a majority vote to kill **%s**.' % (await client.fetch_user(str(maj.id))).name)
+
+    for mafia in mafias:
+        maf_user = await client.fetch_user(str(mafia.id))
+        await maf_user.send('**%s** has selected **%s** as their target to kill.' % (user.name, target))
 
 
 pr_funcs = {
@@ -559,7 +577,7 @@ async def m_setlimit(message, author, server):
 
 async def m_join(message, author, server):
     if server.running:
-        await message.channel.send('Game is ongoing.')
+        await message.channel.send('Game is ongoing: please wait until it ends before joining.')
         return
     if author in server.players:
         await message.channel.send('<@%s>, you are already in the game!' % str(author))
@@ -578,8 +596,8 @@ async def m_leave(message, author, server):
         await message.channel.send('<@%s>, you are not currently part of the game in this server.' % str(author))
         return
     if server.running and author in server.players:
+        await message.channel.send('<@%s> has elected to leave the game.' % str(author))
         if server.players[author].alive:
-            await message.channel.send('<@%s> has elected to leave the game.' % str(author))
             server.players[author].alive = 0
             server.players[author].ingame = 0
             if server.settings['continue']:
@@ -591,9 +609,9 @@ async def m_leave(message, author, server):
                 await game_end(message.channel, 'None', server)
         else:
             server.players[author].ingame = 0
-            pass
-            # player quits (leaves text and voice channels, loses role)
-            # REMEMBER TO FILL THIS IN AT SOME POINT
+            allPlayers.pop(author)      # allows player to join game in different server
+            role = discord.utils.get(message.guild.roles, name='Mafia')
+            message.author.remove_roles(role)
         return
     server.players.pop(author)
     allPlayers.pop(author)
@@ -786,6 +804,12 @@ client.run('')
 
 '''
 REMEMBER TO REMOVE TOKEN WHEN COMMITTING
+
+
+Possible bugs or to-do:
+- make sure nobody has mafia role upon joining a server (is this necessary?)
+- does the text channel even have to be locked? consider having only private VC
+
 
 REMINDERS:
 - message.author.id (author) is integer, not string
