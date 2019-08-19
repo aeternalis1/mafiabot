@@ -205,40 +205,42 @@ async def daytime(channel, server):
             if player.alive and player.role == 'normalcop':         # normal cop report
                 user = await client.fetch_user(str(player.id))
                 if player.cur_choice == None:
-                    user.send('You inquired about nobody, and so you receive no report.')
+                    await user.send('You inquired about nobody, and so you receive no report.')
                 else:
                     target = await client.fetch_user(str(player.cur_choice.id))
-                    user.send('You received a report that **%s** is %s.' % (target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
+                    await user.send('You received a report that **%s** is %s.' % (target.name, ['innocent', 'guilty'][player.cur_choice.role == 'mafia']))
             elif player.alive and player.role == 'paritycop':       # parity cop report
                 user = await client.fetch_user(str(player.id))
                 if player.cur_choice == None:
-                    user.send('You inquired about nobody, and so you receive no report.')
+                    await user.send('You inquired about nobody, and so you receive no report.')
                 elif player.lst_choice == None:
-                    target = await client.fetch_user(str(player.lst_choice.id))
-                    user.send('Your next target will be compared to **%s**, and you will determine whether their alignments are the same or not.' % target.name)
+                    target = await client.fetch_user(str(player.cur_choice.id))
+                    await user.send('Your next target will be compared to **%s**, and you will determine whether their alignments are the same or not.' % target.name)
                 else:
                     lst = await client.fetch_user(str(player.lst_choice.id))
                     cur = await client.fetch_user(str(player.cur_choice.id))
                     if [player.lst_choice.role, player.cur_choice.role].count('mafia') == 1 or player.lst_choice.role != player.cur_choice.role:
-                        user.send('You received a report that **%s** and **%s** are of different alignments.' % (lst.name, cur.name))
+                        await user.send('You received a report that **%s** and **%s** are of different alignments.' % (lst.name, cur.name))
                     else:
-                        user.send('You received a report that **%s** and **%s** are of the same alignment.' % (lst.name, cur.name))
+                        await user.send('You received a report that **%s** and **%s** are of the same alignment.' % (lst.name, cur.name))
             elif player.alive and player.role == 'doctor' and player.action:    # doctor save
                 server.saves.append(player.cur_choice)
 
         # mafia kill
 
-        tars = [player.cur_choice for player in server.players if (player.alive and player.role == 'mafia')]
+        tars = [player.cur_choice for player in server.players.values() if (player.alive and player.role == 'mafia')]
         kill = None
         for tar in tars:
             if tars.count(tar) > len(tars)/2:
                 kill = tar
 
-        if kill != None and kill not in server.saves:
+        if kill != None and kill != 'no-kill' and kill not in server.saves:
             await channel.send('<@%s> has been killed in the night!' % str(kill.id))
             await death(channel, kill.id, server)
             if await check_end(channel, server):
                 return
+        else:
+            await channel.send('It was a quiet night, without any deaths.')
 
     await channel.send('It is day %d! You have %s minutes to decide upon a lynch.' % (server.round, str(server.settings['limit1'])))
 
@@ -295,7 +297,7 @@ async def get_options(player, server):
         if player.role == 'doctor' and p == player.lst_choice:
             continue
         user = await client.fetch_user(str(p.id))
-        player.options.append([len(server.options), user, p])
+        player.options.append([len(player.options), user, p])
 
 
 async def output_options(player, server):
@@ -305,8 +307,8 @@ async def output_options(player, server):
 
 
 async def maf_options(mafias, server):
-    options = [[0, client.user, None]]
-    for player in server.players:
+    options = [[0, client.user, 'no-kill']]
+    for player in server.players.values():
         if player.alive and player.role != 'mafia':
             options.append([len(options), await client.fetch_user(str(player.id)), player])
     for player in mafias:
@@ -323,32 +325,32 @@ async def maf_options(mafias, server):
 
 async def m_ncop(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    target = player.choices[choice][1].name
+    target = player.options[choice][1].name
     await user.send('You have selected **%s** as the target of your investigation. You will recieve a report in the morning.' % target)
     await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
 async def m_pcop(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    target = player.choices[choice][1].name
+    target = player.options[choice][1].name
     if not player.lst_choice:
         await user.send('You have selected **%s** as the target of your investigation. Remember that you will not recieve a report in the morning, as you are a parity cop.' % target)
     else:
-        lst = await client.fetch_user(str(player.lst_choice))
+        lst = await client.fetch_user(str(player.lst_choice.id))
         await user.send('You have selected **%s** as the target of your investigation, to be compared to **%s**. You will recieve a report in the morning.' % (target, lst.name))
     await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
 async def m_doc(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    target = player.choices[choice][1].name
+    target = player.options[choice][1].name
     await user.send('You have selected **%s** as the target of your save. They will be immune to death tonight.' % target)
     await user.send('You may change your choice as long as not everyone has completed their night action.')
 
 
 async def m_maf(player, server, choice):
     user = await client.fetch_user(str(player.id))
-    target = player.choices[choice][1].name
+    target = player.options[choice][1].name
     await user.send('You have selected **%s** as your target to kill.' % target)
 
     tars = [player.cur_choice for player in server.players.values() if (player.alive and player.role == 'mafia')]
@@ -359,12 +361,22 @@ async def m_maf(player, server, choice):
 
     if maj == None:
         await user.send('There is presently no majority in your votes.')
+    elif maj == 'no-kill':
+        await user.send('There is presently a majority vote to no-kill.')
     else:
         await user.send('There is presently a majority vote to kill **%s**.' % (await client.fetch_user(str(maj.id))).name)
 
-    for mafia in mafias:
+    for p in server.players.values():
+        if p == player or p.role != 'mafia' or not p.alive:
+            continue
         maf_user = await client.fetch_user(str(mafia.id))
         await maf_user.send('**%s** has selected **%s** as their target to kill.' % (user.name, target))
+        if maj == None:
+            await user.send('There is presently no majority in your votes.')
+        elif maj == 'no-kill':
+            await user.send('There is presently a majority vote to no-kill.')
+        else:
+            await user.send('There is presently a majority vote to kill **%s**.' % (await client.fetch_user(str(maj.id))).name)
 
 
 pr_funcs = {
@@ -380,7 +392,7 @@ async def check_action(player, server, message):
     try:
         choice = int(query[0])
         if choice < 0 or choice >= len(player.options):
-            message.channel.send('Please input a valid option.')
+            await message.channel.send('Please input a valid option.')
             return
         player.cur_choice = player.options[choice][2]
         if not player.action:
@@ -389,7 +401,7 @@ async def check_action(player, server, message):
         func = pr_funcs[player.role]
         await func(player, server, choice)
     except:
-        message.channel.send('Please input a valid option.')
+        await message.channel.send('Please input a valid option.')
 
 
 async def nighttime(channel, server):
@@ -787,7 +799,7 @@ async def on_message(message):
         server = servers[allPlayers[message.author.id]]
         player = server.players[message.author.id]
         if server.running and not server.phase and player.alive and player.role in power_roles:
-            check_action(player, server, message)
+            await check_action(player, server, message)
 
     if message.author == client.user or len(message.content) < 2 or message.content[:2] != 'm!':
         return
